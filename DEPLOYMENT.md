@@ -12,26 +12,40 @@
 
 ## Quick Deploy (Vercel — Recommended)
 
-1. Install Vercel CLI:
-   ```bash
-   npm i -g vercel
-   ```
+### One-Click Deploy
 
-2. Login to Vercel:
-   ```bash
-   vercel login
-   ```
+1. Push code to GitHub: `https://github.com/mrmolly90/uzu-union-bank`
+2. Go to [https://vercel.com/import](https://vercel.com/import)
+3. Select the `mrmolly90/uzu-union-bank` repository
+4. Vercel auto-detects Next.js — no configuration needed
+5. Add these **Environment Variables** in Vercel Dashboard → Project Settings → Environment Variables:
 
-3. Deploy:
-   ```bash
-   vercel --prod
-   ```
+| Variable | Value | Secret |
+|----------|-------|--------|
+| `DATABASE_URL` | Your PostgreSQL connection string | ✅ Yes |
+| `JWT_SECRET` | `openssl rand -base64 32` | ✅ Yes |
+| `NEXT_PUBLIC_APP_URL` | `https://uzu-union-bank.vercel.app` | No |
+| `NEXT_PUBLIC_WS_URL` | `https://uzu-union-bank.vercel.app` | No |
 
-4. Set environment variables in Vercel Dashboard:
-   - `JWT_SECRET` — Generate with `openssl rand -base64 32`
-   - `DATABASE_URL` — Use a PostgreSQL provider (see below)
-   - `NEXT_PUBLIC_APP_URL` — Your production domain
-   - `NEXT_PUBLIC_WS_URL` — WebSocket URL (if using real-time features)
+6. Click **Deploy** — Vercel runs `npx prisma generate && npx next build`
+
+### Database Setup
+
+**For production, you MUST use PostgreSQL.** Recommended providers:
+
+- **[Neon](https://neon.tech)** — Free tier, serverless PostgreSQL
+- **[Supabase](https://supabase.com)** — Free tier with PostgreSQL
+- **[Railway](https://railway.app)** — Easy PostgreSQL provisioning
+
+After creating your database, copy the connection string and set it as `DATABASE_URL` in Vercel.
+
+### CLI Deploy (Alternative)
+
+```bash
+npm i -g vercel
+vercel login
+vercel --prod
+```
 
 ## Database Setup
 
