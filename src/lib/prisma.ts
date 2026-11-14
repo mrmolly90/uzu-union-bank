@@ -21,6 +21,20 @@ function createPrismaClient() {
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     datasources: isVercel ? { db: { url: finalUrl } } : undefined,
   });
+
+  // Auto-push schema on first use (critical for Vercel serverless)
+  if (isVercel) {
+    const { execSync } = require('child_process');
+    try {
+      execSync('npx prisma db push --schema=prisma/schema.vercel.prisma --accept-data-loss --skip-generate', {
+        stdio: 'pipe',
+        env: { ...process.env, DATABASE_URL: finalUrl },
+      });
+    } catch (e) {
+      console.error('[Prisma] Auto-push failed:', e);
+    }
+  }
+
   return client;
 }
 
