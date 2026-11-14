@@ -275,6 +275,12 @@ export default function DashboardPage() {
           <path d="M16 4C9.4 4 4 9.4 4 16s5.4 12 12 12 12-5.4 12-12S22.6 4 16 4zm3.5 17.5c-.5.5-1.2.7-2 .7h-1v2h-1.5v-2h-3v-1.5h5c.5 0 .9-.2 1.2-.5.3-.3.5-.7.5-1.2s-.2-.9-.5-1.2c-.3-.3-.7-.5-1.2-.5h-2c-1.1 0-2-.4-2.7-1.1-.7-.7-1.1-1.6-1.1-2.7s.4-2 1.1-2.7c.7-.7 1.6-1.1 2.7-1.1h1v-2h1.5v2h3v1.5h-5c-.5 0-.9.2-1.2.5-.3.3-.5.7-.5 1.2s.2.9.5 1.2c.3.3.7.5 1.2.5h2c1.1 0 2 .4 2.7 1.1.7.7 1.1 1.6 1.1 2.7s-.4 2-1.1 2.7z" fill="white"/>
         </svg>
       ),
+      USDT: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#26A17B"/>
+          <path d="M17.9 17.6c-.1.1-.5.1-1.9.1-1.4 0-1.8 0-1.9-.1-3.7-.2-6.5-.9-6.5-1.8s2.8-1.6 6.5-1.8v2.9c.1.1.5.1 1.9.1 1.4 0 1.8 0 1.9-.1v-2.9c3.7.2 6.5.9 6.5 1.8s-2.8 1.6-6.5 1.8zm0-4.7v-2.6h5.1V7.5H9v2.8h5.1v2.6c-4.1.2-7.2 1.1-7.2 2.1s3.1 1.9 7.2 2.1v7.5h2.8v-7.5c4.1-.2 7.2-1.1 7.2-2.1s-3.1-1.9-7.2-2.1z" fill="white"/>
+        </svg>
+      ),
       SOL: (
         <svg viewBox="0 0 32 32" width={size} height={size}>
           <circle cx="16" cy="16" r="16" fill="url(#solGradient)"/>
@@ -535,7 +541,7 @@ export default function DashboardPage() {
                     <Wallet size={18} className="text-bybit-bg" />
                   </div>
                   <div>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Total Portfolio Balance</p>
+                    <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Total Balance</p>
                     <div className="flex items-center gap-2">
                       <span className="text-2xl sm:text-3xl font-extrabold text-white">
                         {showBalance ? formatAmount(totalBalance, activeAccount) : '••••••'}
@@ -1450,24 +1456,25 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <button onClick={() => { setModalOpen(null); setActiveSidebar('Dashboard'); }} className="p-2.5 rounded-xl bg-bybit-elevated border border-bybit-border text-gray-400 hover:text-bybit-yellow hover:border-bybit-yellow/50 transition-all">
-              <ArrowLeft size={18} />
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-bybit-yellow text-bybit-bg font-semibold text-sm hover:brightness-110 transition-all shadow-bybit-glow">
-              <Download size={16} /> Deposit Crypto
-            </button>
-            <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-bybit-elevated border border-bybit-border text-gray-300 font-semibold text-sm hover:border-bybit-yellow/50 transition-all">
-              <Send size={16} /> Withdraw
-            </button>
+          {/* Crypto to Banking Transfer Box — Compact */}
+          <div className="rounded-xl bg-gradient-to-r from-blue-500/5 to-emerald-500/5 border border-blue-500/20 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <ArrowLeftRight size={14} className="text-bybit-yellow" />
+                <span className="text-xs font-semibold text-white">Crypto → Banking</span>
+              </div>
+              <Badge variant="confirmed">Auto-convert</Badge>
+            </div>
+            <p className="text-[10px] text-gray-500">
+              Deposited crypto is automatically converted to <span className="text-bybit-yellow font-medium">{getCurrencySymbol(activeAccount)}{activeAccount}</span> and credited to your Checking Account. Conversion completes 10–30 min after network confirmation.
+            </p>
           </div>
 
           {/* Market Disclaimer */}
           <div className="p-3 rounded-xl bg-bybit-elevated/30 border border-bybit-border/50">
             <div className="flex items-start gap-2">
               <Info size={12} className="text-gray-500 mt-0.5 shrink-0" />
-              <p className="text-[9px] text-gray-600">Live quotes are supplied by CoinGecko and shown in {activeAccount}. This account does not yet synchronize on-chain holdings or automatically credit crypto deposits.</p>
+              <p className="text-[9px] text-gray-600">Live quotes supplied by CoinGecko in {activeAccount}. Click any coin above to view the deposit address and send funds.</p>
             </div>
           </div>
         </div>
@@ -1570,12 +1577,24 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Deposit to Checking Account Info */}
-            <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-start gap-2">
-              <Wallet size={14} className="text-blue-400 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-[10px] font-semibold text-blue-300">Deposits Routed to Checking Account</p>
-                <p className="text-[9px] text-blue-200/70 mt-0.5">All crypto deposits are automatically converted to {activeAccount} ({getCurrencySymbol(activeAccount)}) and credited to your Checking Account. Estimated conversion: 10-30 minutes after network confirmation.</p>
+            {/* Deposit to Account — Choose Checking or Savings */}
+            <div className="space-y-3">
+              <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Deposit to</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-start gap-2">
+                  <Wallet size={14} className="text-blue-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-semibold text-blue-300">Checking Account</p>
+                    <p className="text-[9px] text-blue-200/70 mt-0.5">Auto-converted to {getCurrencySymbol(activeAccount)}{activeAccount}</p>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2">
+                  <PiggyBank size={14} className="text-emerald-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-semibold text-emerald-300">Savings Account</p>
+                    <p className="text-[9px] text-emerald-200/70 mt-0.5">Auto-converted to {getCurrencySymbol(activeAccount)}{activeAccount}</p>
+                  </div>
+                </div>
               </div>
             </div>
 

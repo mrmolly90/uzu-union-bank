@@ -14,7 +14,7 @@ const COINS = [
   { id: 'avalanche-2', symbol: 'AVAX', name: 'Avalanche' },
   { id: 'chainlink', symbol: 'LINK', name: 'Chainlink' },
   { id: 'uniswap', symbol: 'UNI', name: 'Uniswap' },
-  { id: 'polygon-ecosystem-token', symbol: 'POL', name: 'POL' },
+  { id: 'matic-network', symbol: 'MATIC', name: 'Polygon' },
   { id: 'cosmos', symbol: 'ATOM', name: 'Cosmos' },
 ];
 

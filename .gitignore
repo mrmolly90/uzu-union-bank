@@ -12,9 +12,11 @@
 .env.development.local
 .env.test.local
 .env.production.local
+.env.staging.local
 *.pem
 *.key
 *.crt
+!server/.env.example
 
 # --- Dependencies ---
 node_modules/
@@ -77,3 +79,4 @@ Desktop.ini
 .cache/
 tmp/
 temp/
+.vercel
