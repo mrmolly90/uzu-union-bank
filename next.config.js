@@ -12,10 +12,6 @@ const nextConfig = {
       exclude: ['error', 'warn'],
     } : false,
   },
-  // Ensure Prisma is bundled correctly for Vercel serverless
-  outputFileTracingIncludes: {
-    '/*': ['./prisma/**/*', './node_modules/.prisma/**/*'],
-  },
   // Security headers
   async headers() {
     return [

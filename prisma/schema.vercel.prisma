@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
+  bankPinHash       String?
+  fullName          String
+  countryCode       String
+  kycStatus         String    @default("PENDING")
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?
+  phone             String?
+  dob               String?
+  address           String?
+  occupation        String?
+  idNumber          String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  accounts          Account[]
+  transactions      Transaction[] @relation("UserTransactions")
+  auditLogs         AuditLog[]
+  refreshTokens     RefreshToken[]
+  notifications     Notification[]
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         String   @default("ADMIN")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("INFO")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model CryptoAddress {
+  id         String   @id @default(cuid())
+  symbol     String   @unique
+  name       String
+  network    String
+  address    String
+  minDeposit String   @default("")
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Account {
+  id                  String    @id @default(cuid())
+  userId              String
+  currency            String
+  balance             Decimal   @default(0)
+  ledgerLockedBalance Decimal   @default(0)
+  accountNumber       String    @unique
+  accountType         String    @default("CHECKING")
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user                User      @relation(fields: [userId], references: [id])
+  sourceTransactions  Transaction[] @relation("SourceAccount")
+  destinationTransactions Transaction[] @relation("DestinationAccount")
+
+  @@unique([userId, currency, accountType])
+}
+
+model Transaction {
+  id                    String    @id @default(cuid())
+  sourceAccountId       String
+  destinationBankSwift  String
+  destinationIban       String
+  destinationBankName   String    @default("")
+  sourceAmount          Decimal
+  sourceCurrency        String
+  destinationAmount     Decimal
+  destinationCurrency   String
+  exchangeRate          Decimal
+  fee                   Decimal   @default(0)
+  status                String    @default("INITIATED")
+  blockchainTxHash      String?
+  iso20022Payload       String?
+  failureReason         String?
+  initiatedById         String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  sourceAccount         Account   @relation("SourceAccount", fields: [sourceAccountId], references: [id])
+  destinationAccount    Account?  @relation("DestinationAccount", fields: [destinationAccountId], references: [id])
+  destinationAccountId  String?
+  initiatedBy           User      @relation("UserTransactions", fields: [initiatedById], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  ipAddress String?
+  userAgent String?
+  metadata  String?
+  timestamp DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model ExchangeRate {
+  id        String   @id @default(cuid())
+  base      String
+  quote     String
+  rate      Decimal
+  bid       Decimal
+  ask       Decimal
+  updatedAt DateTime @updatedAt
+
+  @@unique([base, quote])
+}
