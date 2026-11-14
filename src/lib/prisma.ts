@@ -13,39 +13,42 @@ function ensureSchema() {
   const isVercel = process.env.VERCEL === '1';
   if (!isVercel) return;
   
-  const dbPath = path.resolve(process.cwd(), 'prisma', 'uzu_bank.db');
+  // On Vercel, the build creates the DB at /vercel/path0/prisma/uzu_bank.db
+  // but runtime is at /var/task/ which is read-only.
+  // We must copy the DB to /tmp/ which is writable.
+  const sourceDb = path.resolve(process.cwd(), 'prisma', 'uzu_bank.db');
+  const tmpDir = '/tmp/prisma';
+  const tmpDb = path.join(tmpDir, 'uzu_bank.db');
   
-  // Check if DB file exists and has tables
-  if (fs.existsSync(dbPath)) {
-    try {
-      const result = execSync(
-        `node -e "const d=require('child_process').execSync('node -e \\"process.exit(0)\\"');"`,
-        { stdio: 'pipe', timeout: 5000 }
-      );
-    } catch {}
-    
-    // Quick check: try reading the DB file size
-    const stat = fs.statSync(dbPath);
-    if (stat.size > 4096) {
-      console.log('[Prisma] Database exists, size:', stat.size);
-      return; // DB likely has tables
-    }
+  console.log('[Prisma] ensureSchema called');
+  console.log('[Prisma] cwd:', process.cwd());
+  console.log('[Prisma] source DB:', sourceDb);
+  console.log('[Prisma] source DB exists:', fs.existsSync(sourceDb));
+  console.log('[Prisma] tmp DB:', tmpDb);
+  
+  // Create tmp dir if needed
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
   }
   
-  // Push schema
+  // Copy DB to /tmp if not already there
+  if (fs.existsSync(sourceDb) && !fs.existsSync(tmpDb)) {
+    fs.copyFileSync(sourceDb, tmpDb);
+    console.log('[Prisma] Copied DB to /tmp');
+  }
+  
+  // Push schema to /tmp DB
   try {
     const prismaPath = path.join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js');
     const schemaPath = path.join(process.cwd(), 'prisma', 'schema.vercel.prisma');
     
-    console.log('[Prisma] Pushing schema...');
-    console.log('[Prisma] DB path:', dbPath);
-    console.log('[Prisma] Schema path:', schemaPath);
+    console.log('[Prisma] Pushing schema to /tmp DB...');
     
     const output = execSync(
       `node "${prismaPath}" db push --schema="${schemaPath}" --accept-data-loss --skip-generate`,
       {
         cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
+        env: { ...process.env, DATABASE_URL: `file:${tmpDb}` },
         stdio: 'pipe',
         timeout: 60000,
       }
@@ -56,11 +59,22 @@ function ensureSchema() {
     if (e.stdout) console.error('[Prisma] stdout:', e.stdout.toString());
     if (e.stderr) console.error('[Prisma] stderr:', e.stderr.toString());
   }
+  
+  // Update DATABASE_URL to point to /tmp
+  process.env.DATABASE_URL = `file:${tmpDb}`;
+  console.log('[Prisma] DATABASE_URL set to:', process.env.DATABASE_URL);
 }
 
 function createPrismaClient() {
   const isVercel = process.env.VERCEL === '1';
   let url = process.env.DATABASE_URL || 'file:./prisma/uzu_bank.db';
+
+  // Push schema on Vercel BEFORE creating client
+  // This copies DB to /tmp and sets DATABASE_URL
+  if (isVercel) {
+    ensureSchema();
+    url = process.env.DATABASE_URL || url;
+  }
 
   // On Vercel, resolve to absolute path
   if (isVercel && url.startsWith('file:')) {
@@ -68,11 +82,6 @@ function createPrismaClient() {
     const absolutePath = path.resolve(relativePath);
     url = `file:${absolutePath}`;
     process.env.DATABASE_URL = url;
-  }
-
-  // Push schema on Vercel BEFORE creating client
-  if (isVercel) {
-    ensureSchema();
   }
 
   const client = new PrismaClient({
