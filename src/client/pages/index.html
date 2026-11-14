@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0A0A0B">
+    <meta name="description" content="UZU UNION BANK — Smarter Banking. Zero fees, high-yield savings, and bank-grade security.">
+    <title>UZU UNION BANK — Smarter Banking. Your Money. Your Future.</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        uzu: {
+                            950: '#0A0A0B', 900: '#141416', 800: '#1C1C20',
+                            700: '#2C2C35', 600: '#3D3D48',
+                            yellow: '#F7D44A', 'yellow-light': '#FEF08A', 'yellow-dark': '#D4A843',
+                            emerald: '#10B981', danger: '#EF4444'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    },
+                    animation: {
+                        'float': 'float 6s ease-in-out infinite',
+                        'float-delayed': 'float 6s ease-in-out 2s infinite',
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'glow': 'glow 2s ease-in-out infinite alternate',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px)' },
+                            '50%': { transform: 'translateY(-20px)' },
+                        },
+                        glow: {
+                            '0%': { boxShadow: '0 0 20px rgba(247, 212, 74, 0.1)' },
+                            '100%': { boxShadow: '0 0 40px rgba(247, 212, 74, 0.3)' },
+                        },
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/assets/css/main.css" />
+    <style>
+        .glass-panel {
+            background: rgba(20, 20, 22, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(247, 212, 74, 0.1);
+        }
+        .glass-panel-hover {
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        .glass-panel-hover:hover {
+            border-color: rgba(247, 212, 74, 0.3);
+            box-shadow: 0 0 40px rgba(247, 212, 74, 0.06);
+        }
+        .grid-bg {
+            background-image: radial-gradient(rgba(247, 212, 74, 0.04) 1px, transparent 1px);
+            background-size: 32px 32px;
+        }
+        .text-gradient-yellow {
+            background: linear-gradient(135deg, #F7D44A, #FEF08A, #D4A843);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .reveal {
+            opacity: 0; transform: translateY(24px);
+            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+        }
+        .reveal.visible { opacity: 1; transform: translateY(0); }
+        .reveal-delay-1 { transition-delay: 100ms; }
+        .reveal-delay-2 { transition-delay: 200ms; }
+        .reveal-delay-3 { transition-delay: 300ms; }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .animate-float, .reveal { animation: none; opacity: 1; transform: none; }
+        }
+    </style>
+</head>
+<body class="bg-uzu-950 text-gray-300 font-sans antialiased selection:bg-uzu-yellow/30 selection:text-uzu-950 min-h-screen">
+
+    <!-- ════════════════════════════════════════════════════════════════
+         STICKY NAVIGATION
+         ════════════════════════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-50 border-b border-uzu-800 bg-uzu-950/90 backdrop-blur-xl" role="banner">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 lg:h-20 flex items-center justify-between">
+            <!-- Brand -->
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 lg:w-10 lg:h-10 rounded-xl bg-uzu-yellow flex items-center justify-center shadow-lg shadow-uzu-yellow/20" aria-hidden="true">
+                    <span class="text-uzu-950 font-extrabold text-sm lg:text-base">
+                        <svg viewBox="0 0 24 24" fill="none" class="w-5 h-5 lg:w-6 lg:h-6">
+                            <path d="M3 10L12 3L21 10V20C21 20.5523 20.5523 21 20 21H4C3.44772 21 3 20.5523 3 20V10Z" fill="currentColor" stroke="currentColor" stroke-width="1.5"/>
+                            <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" fill="#0A0A0B"/>
+                            <text x="12" y="13" text-anchor="middle" font-size="8" font-weight="bold" fill="#F7D44A">$</text>
+                        </svg>
+                    </span>
+                </div>
+                <div>
+                    <span class="text-base lg:text-lg font-extrabold tracking-tight text-white">UZU <span class="text-uzu-yellow">UNION</span></span>
+                    <span class="block text-[9px] lg:text-[10px] uppercase tracking-widest text-gray-500 font-mono">Smarter Banking</span>
+                </div>
+            </div>
+
+            <!-- Center Nav -->
+            <nav class="hidden lg:flex items-center gap-1" aria-label="Primary navigation">
+                <a href="#accounts" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-uzu-yellow transition-colors rounded-lg hover:bg-white/5">Accounts</a>
+                <a href="#cards" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-uzu-yellow transition-colors rounded-lg hover:bg-white/5">Cards</a>
+                <a href="#security" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-uzu-yellow transition-colors rounded-lg hover:bg-white/5">Security</a>
+                <a href="#faq" class="px-4 py-2 text-sm font-medium text-gray-300 hover:text-uzu-yellow transition-colors rounded-lg hover:bg-white/5">FAQ</a>
+            </nav>
+
+            <!-- Right Actions -->
+            <div class="hidden lg:flex items-center gap-3">
+                <a href="auth.html?mode=login" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors" aria-label="Log in">Log In</a>
+                <a href="auth.html?mode=register" class="px-5 py-2.5 rounded-xl bg-uzu-yellow text-uzu-950 font-bold text-sm shadow-lg shadow-uzu-yellow/20 hover:brightness-110 transition-all" aria-label="Get started">
+                    Get Started <i class="fa-solid fa-arrow-right ml-1 text-[10px]" aria-hidden="true"></i>
+                </a>
+            </div>
+
+            <!-- Mobile Toggle -->
+            <button id="mobile-toggle" class="lg:hidden p-2 text-gray-400 hover:text-uzu-yellow transition-colors" aria-label="Toggle menu">
+                <i class="fa-solid fa-bars text-lg"></i>
+            </button>
+        </div>
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden lg:hidden border-t border-uzu-800 bg-uzu-950">
+            <div class="px-4 py-4 space-y-1">
+                <a href="#accounts" class="block px-4 py-3 text-sm font-medium text-gray-300 hover:text-uzu-yellow hover:bg-white/5 rounded-xl transition-colors">Accounts</a>
+                <a href="#cards" class="block px-4 py-3 text-sm font-medium text-gray-300 hover:text-uzu-yellow hover:bg-white/5 rounded-xl transition-colors">Cards</a>
+                <a href="#security" class="block px-4 py-3 text-sm font-medium text-gray-300 hover:text-uzu-yellow hover:bg-white/5 rounded-xl transition-colors">Security</a>
+                <a href="#faq" class="block px-4 py-3 text-sm font-medium text-gray-300 hover:text-uzu-yellow hover:bg-white/5 rounded-xl transition-colors">FAQ</a>
+                <div class="pt-4 space-y-3">
+                    <a href="auth.html?mode=login" class="block w-full px-4 py-3 rounded-xl border border-uzu-700 text-center text-sm font-medium text-gray-300 hover:border-uzu-yellow/30 transition-colors">Log In</a>
+                    <a href="auth.html?mode=register" class="block w-full px-4 py-3 rounded-xl bg-uzu-yellow text-uzu-950 font-bold text-center text-sm">Get Started</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- ════════════════════════════════════════════════════════════════
+             HERO
+             ════════════════════════════════════════════════════════════════ -->
+        <section class="relative pt-16 pb-24 lg:pt-24 lg:pb-32 overflow-hidden" aria-label="Hero">
+            <!-- 3D Animated Background -->
+            <div class="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+                <div class="absolute top-20 left-[10%] w-64 h-64 border border-uzu-yellow/10 rounded-full animate-float opacity-30"></div>
+                <div class="absolute top-40 right-[15%] w-48 h-48 border border-uzu-yellow/10 rounded-3xl animate-float opacity-20 rotate-45" style="animation-delay: 2s;"></div>
+                <div class="absolute bottom-20 left-[20%] w-32 h-32 bg-uzu-yellow/5 rounded-full blur-xl animate-pulse"></div>
+                <div class="absolute inset-0 bg-grid-bg opacity-30"></div>
+                <div class="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-uzu-yellow/5 rounded-full blur-[120px]"></div>
+            </div>
+
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+                    <!-- Left Content -->
+                    <div class="lg:col-span-7 space-y-8 reveal">
+                        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-uzu-yellow/10 border border-uzu-yellow/20 text-uzu-yellow text-xs font-semibold">
+                            <i class="fa-solid fa-shield"></i> FDIC Insured up to $250,000
+                        </div>
+
+                        <h1 class="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-extrabold tracking-tight text-white leading-[1.05]">
+                            YOUR MONEY.<br>YOUR FUTURE.<br>
+                            <span class="text-gradient-yellow">PROTECTED.</span>
+                        </h1>
+
+                        <p class="text-base sm:text-lg text-gray-400 max-w-xl leading-relaxed">
+                            AES-256 encryption · Biometric MFA · AI-powered fraud monitoring 24/7.
+                            Your financial security is our foundation.
+                        </p>
+
+                        <div class="flex flex-col sm:flex-row gap-4">
+                            <a href="auth.html?mode=register" class="px-8 py-4 rounded-xl bg-uzu-yellow text-uzu-950 font-bold text-center shadow-xl shadow-uzu-yellow/25 hover:brightness-110 transition-all flex items-center justify-center gap-2">
+                                Open Your Free Account <i class="fa-solid fa-arrow-right"></i>
+                            </a>
+                            <a href="auth.html?mode=login" class="px-8 py-4 rounded-xl glass-panel text-white font-semibold text-center hover:border-uzu-yellow/50 transition-colors">
+                                View Rates
+                            </a>
+                        </div>
+
+                        <!-- Stats -->
+                        <div class="grid grid-cols-3 gap-6 pt-6 border-t border-uzu-800">
+                            <div>
+                                <div class="text-2xl sm:text-3xl font-bold text-uzu-yellow">AES-256</div>
+                                <div class="text-xs text-gray-500">Encryption Standard</div>
+                            </div>
+                            <div>
+                                <div class="text-2xl sm:text-3xl font-bold text-uzu-yellow">3-Factor</div>
+                                <div class="text-xs text-gray-500">Authentication</div>
+                            </div>
+                            <div>
+                                <div class="text-2xl sm:text-3xl font-bold text-uzu-yellow">99.9%</div>
+                                <div class="text-xs text-gray-500">Fraud Detection Rate</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Security Trust Preview -->
+                    <div class="lg:col-span-5 reveal reveal-delay-2">
+                        <div class="relative bg-gradient-to-br from-uzu-900 to-uzu-800 rounded-3xl border border-uzu-700 p-6 sm:p-8 shadow-2xl animate-float" style="box-shadow: 0 0 30px rgba(247,212,74,0.1);">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <p class="text-xs text-gray-500 font-mono">Security Status</p>
+                                    <p class="text-2xl sm:text-3xl font-bold text-emerald-400 mt-1">All Secure</p>
+                                </div>
+                                <div class="w-12 h-12 rounded-xl bg-uzu-yellow flex items-center justify-center">
+                                    <i class="fa-solid fa-shield-halved text-uzu-950 text-xl"></i>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3 mb-6">
+                                <div class="bg-uzu-950/60 rounded-xl p-4 border border-uzu-700">
+                                    <p class="text-xs text-gray-500">Encryption</p>
+                                    <p class="text-lg font-bold text-white mt-1">AES-256</p>
+                                    <p class="text-[10px] text-emerald-400 mt-1">Military Grade</p>
+                                </div>
+                                <div class="bg-uzu-950/60 rounded-xl p-4 border border-uzu-700">
+                                    <p class="text-xs text-gray-500">Authentication</p>
+                                    <p class="text-lg font-bold text-uzu-yellow mt-1">3-Factor</p>
+                                    <p class="text-[10px] text-emerald-400 mt-1">Biometric MFA</p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-3">
+                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Security Layers</p>
+                                <div class="flex items-center justify-between py-2 border-t border-uzu-800">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-uzu-yellow/10 flex items-center justify-center text-uzu-yellow text-xs font-bold"><i class="fa-solid fa-lock"></i></div>
+                                        <div>
+                                            <p class="text-sm font-medium text-white">TLS 1.3 Encryption</p>
+                                            <p class="text-xs text-gray-500">Data in Transit</p>
+                                        </div>
+                                    </div>
+                                    <span class="text-sm font-semibold text-emerald-400">Active</span>
+                                </div>
+                                <div class="flex items-center justify-between py-2 border-t border-uzu-800">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-gray-400 text-xs font-bold"><i class="fa-solid fa-fingerprint"></i></div>
+                                        <div>
+                                            <p class="text-sm font-medium text-white">Fraud Monitoring</p>
+                                            <p class="text-xs text-gray-500">AI-Powered 24/7</p>
+                                        </div>
+                                    </div>
+                                    <span class="text-sm font-semibold text-emerald-400">Active</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             ACCOUNTS GRID
+             ════════════════════════════════════════════════════════════════ -->
+        <section id="accounts" class="py-20 lg:py-28 relative" aria-label="Account types">
+            <div class="absolute inset-0 bg-grid-bg opacity-20 pointer-events-none"></div>
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                <div class="text-center max-w-3xl mx-auto space-y-4 mb-14 reveal">
+                    <span class="text-xs font-mono text-uzu-yellow tracking-widest uppercase font-semibold">Accounts</span>
+                    <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white">Banking for Every <span class="text-gradient-yellow">Stage of Life</span></h2>
+                    <p class="text-gray-400 text-sm sm:text-base">From your first checking account to a full business suite — we've got you covered with zero fees and maximum value.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+                    <!-- Savings Account -->
+                    <div class="glass-panel rounded-2xl p-6 sm:p-8 space-y-6 glass-panel-hover group relative overflow-hidden reveal reveal-delay-1">
+                        <div class="w-14 h-14 rounded-2xl bg-uzu-800 border border-uzu-700 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-piggy-bank text-2xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-white mb-3">Savings Account</h3>
+                            <p class="text-gray-400 text-sm leading-relaxed">Grow your money with competitive interest rates, automated savings tools, and zero minimum balance requirements.</p>
+                        </div>
+                        <!-- Account Details -->
+                        <div class="p-4 rounded-xl bg-uzu-950/60 border border-uzu-800 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs text-gray-500">Account Number</span>
+                                <span class="text-sm font-mono font-bold text-white tracking-wider">UZU-SAV-****-8842</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs text-gray-500">Routing Number</span>
+                                <span class="text-sm font-mono font-bold text-white">021000021</span>
+                            </div>
+                            <div class="flex items-center justify-between pt-2 border-t border-uzu-800">
+                                <span class="text-xs text-gray-500">Available Balance</span>
+                                <span class="text-lg font-bold text-uzu-yellow">$18,420.80</span>
+                            </div>
+                        </div>
+                        <ul class="space-y-2.5">
+                            <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400/60 shrink-0"></span>Competitive APY</li>
+                            <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400/60 shrink-0"></span>Auto round-up savings</li>
+                            <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400/60 shrink-0"></span>No minimum balance</li>
+                            <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400/60 shrink-0"></span>Compound daily</li>
+                        </ul>
+                        <a href="auth.html?mode=register" class="block w-full py-3 rounded-xl border border-uzu-yellow/30 text-uzu-yellow font-semibold text-sm text-center hover:bg-uzu-yellow/10 transition-all group">
+                            Start Saving <i class="fa-solid fa-arrow-right ml-1 group-hover:translate-x-1 transition-transform"></i>
+                        </a>
+                    </div>
+
+                    <!-- Checking Account -->
+                    <div class="glass-panel rounded-2xl p-6 sm:p-8 space-y-6 glass-panel-hover group relative overflow-hidden reveal reveal-delay-2">
+                        <div class="w-14 h-14 rounded-2xl bg-uzu-800 border border-uzu-700 flex items-center justify-center text-uzu-yellow group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-wallet text-2xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-white mb-3">Checking Account</h3>
+                            <p class="text-gray-400 text-sm leading-relaxed">Everyday banking with zero monthly fees, free online bill pay, and instant mobile check deposits.</p>
+                        </div>
+                        <!-- Account Details -->
+                        <div class="p-4 rounded-xl bg-uzu-950/60 border border-uzu-800 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs text-gray-500">Account Number</span>
+                                <span class="text-sm font-mono font-bold text-white tracking-wider">UZU-CHK-****-3317</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs text-gray-500">Routing Number</span>
+                                <span class="text-sm font-mono font-bold text-white">021000021</span>
+                            </div>
+                            <div class="flex items-center justify-between pt-2 border-t border-uzu-800">
+                                <span class="text-xs text-gray-500">Available Balance</span>
+                                <span class="text-lg font-bold text-uzu-yellow">$12,480.00</span>
+                            </div>
+                        </div>
+                        <ul class="space-y-2.5">
+                            <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>$0 monthly fee</li>
+                            <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Free online bill pay</li>
+                            <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Instant mobile deposits</li>
+                            <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>50K+ fee-free ATMs</li>
+                        </ul>
+                        <a href="auth.html?mode=register" class="block w-full py-3 rounded-xl border border-uzu-yellow/30 text-uzu-yellow font-semibold text-sm text-center hover:bg-uzu-yellow/10 transition-all group">
+                            Open Checking <i class="fa-solid fa-arrow-right ml-1 group-hover:translate-x-1 transition-transform"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             CARDS SECTION
+             ════════════════════════════════════════════════════════════════ -->
+        <section id="cards" class="py-20 lg:py-28 bg-uzu-900/40 border-t border-uzu-800 relative" aria-label="Card offerings">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center max-w-3xl mx-auto space-y-4 mb-14 reveal">
+                    <span class="text-xs font-mono text-uzu-yellow tracking-widest uppercase font-semibold">Cards</span>
+                    <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white">Premium Cards. <span class="text-gradient-yellow">Zero Fraud Liability.</span></h2>
+                    <p class="text-gray-400 text-sm sm:text-base">Full Visa and Mastercard with chip & PIN technology, contactless payments, and global acceptance. Apply online instantly.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 max-w-4xl mx-auto">
+                    <!-- Premium Visa Card -->
+                    <div class="glass-panel rounded-2xl overflow-hidden group border border-uzu-yellow/20 reveal reveal-delay-1">
+                        <div class="bg-gradient-to-br from-slate-800 to-slate-900 p-6 sm:p-8 relative overflow-hidden">
+                            <!-- Chip -->
+                            <div class="mb-6">
+                                <div class="w-10 h-8 rounded-md bg-gradient-to-br from-yellow-300 to-amber-500 flex items-center justify-center">
+                                    <div class="w-8 h-6 rounded-sm border border-amber-700/40 flex items-center justify-center">
+                                        <div class="grid grid-cols-3 gap-0.5">
+                                            <div class="w-1 h-1 rounded-full bg-amber-700/40"></div><div class="w-1 h-1 rounded-full bg-amber-700/40"></div><div class="w-1 h-1 rounded-full bg-amber-700/40"></div>
+                                            <div class="w-1 h-1 rounded-full bg-amber-700/40"></div><div class="w-1 h-1 rounded-full bg-amber-700/40"></div><div class="w-1 h-1 rounded-full bg-amber-700/40"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="absolute top-6 right-6">
+                                <div class="w-10 h-7 rounded bg-blue-600/30 flex items-center justify-center">
+                                    <span class="text-blue-300 text-[8px] font-bold tracking-wider">VISA</span>
+                                </div>
+                            </div>
+                            <div class="relative z-10">
+                                <div class="flex items-center justify-between mb-4">
+                                    <span class="px-2.5 py-1 rounded-full bg-uzu-yellow/10 text-uzu-yellow text-[10px] font-bold uppercase tracking-wider border border-uzu-yellow/20">Premium Visa</span>
+                                </div>
+                                <div class="space-y-1 mb-4">
+                                    <p class="text-lg font-bold tracking-widest text-white font-mono">4532 7819 0463 8817</p>
+                                    <div class="flex items-center gap-6">
+                                        <p class="text-xs text-white opacity-60">VALID THRU 12/28</p>
+                                        <p class="text-xs text-white opacity-60">CVV ***</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <p class="text-sm font-semibold text-white">UZU UNION PREMIUM</p>
+                                    <div class="flex gap-1">
+                                        <div class="w-8 h-6 rounded bg-white/20"></div>
+                                        <div class="w-8 h-6 rounded bg-white/20 -ml-3"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div class="flex items-center gap-2 text-uzu-yellow"><i class="fa-solid fa-bolt"></i><span class="text-sm font-semibold">5x points on travel & dining</span></div>
+                            <ul class="space-y-2.5">
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>$0 annual fee</li>
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Airport lounge access</li>
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Travel insurance</li>
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Concierge service</li>
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Chip & PIN technology</li>
+                            </ul>
+                            <div class="p-3 rounded-xl bg-uzu-950/60 border border-uzu-800 space-y-2">
+                                <div class="flex items-center gap-2 text-xs text-gray-400"><i class="fa-solid fa-lock text-uzu-yellow text-[10px]"></i><span>$5,000 daily ATM limit</span></div>
+                                <div class="flex items-center gap-2 text-xs text-gray-400"><i class="fa-solid fa-globe text-uzu-yellow text-[10px]"></i><span>$25,000 online purchase limit</span></div>
+                                <div class="flex items-center gap-2 text-xs text-gray-400"><i class="fa-solid fa-shield text-uzu-yellow text-[10px]"></i><span>Contactless / Apple Pay / Google Pay</span></div>
+                            </div>
+                            <a href="auth.html?mode=register" class="block w-full py-3 rounded-xl border border-uzu-yellow/30 text-uzu-yellow font-semibold text-sm text-center hover:bg-uzu-yellow/10 transition-all">Apply Now <i class="fa-solid fa-arrow-right ml-1"></i></a>
+                        </div>
+                    </div>
+
+                    <!-- Business Mastercard -->
+                    <div class="glass-panel rounded-2xl overflow-hidden group reveal reveal-delay-2">
+                        <div class="bg-gradient-to-br from-emerald-700 to-emerald-900 p-6 sm:p-8 relative overflow-hidden">
+                            <!-- Chip -->
+                            <div class="mb-6">
+                                <div class="w-10 h-8 rounded-md bg-gradient-to-br from-yellow-300 to-amber-500 flex items-center justify-center">
+                                    <div class="w-8 h-6 rounded-sm border border-amber-700/40 flex items-center justify-center">
+                                        <div class="grid grid-cols-3 gap-0.5">
+                                            <div class="w-1 h-1 rounded-full bg-amber-700/40"></div><div class="w-1 h-1 rounded-full bg-amber-700/40"></div><div class="w-1 h-1 rounded-full bg-amber-700/40"></div>
+                                            <div class="w-1 h-1 rounded-full bg-amber-700/40"></div><div class="w-1 h-1 rounded-full bg-amber-700/40"></div><div class="w-1 h-1 rounded-full bg-amber-700/40"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="absolute top-6 right-6">
+                                <div class="w-10 h-7 rounded bg-orange-500/30 flex items-center justify-center">
+                                    <span class="text-orange-300 text-[7px] font-bold tracking-wider">MC</span>
+                                </div>
+                            </div>
+                            <div class="relative z-10">
+                                <div class="flex items-center justify-between mb-4">
+                                    <span class="px-2.5 py-1 rounded-full bg-white/10 text-white text-[10px] font-bold uppercase tracking-wider border border-white/20">Business Mastercard</span>
+                                </div>
+                                <div class="space-y-1 mb-4">
+                                    <p class="text-lg font-bold tracking-widest text-white font-mono">5493 2108 7766 4420</p>
+                                    <div class="flex items-center gap-6">
+                                        <p class="text-xs text-white opacity-60">VALID THRU 12/28</p>
+                                        <p class="text-xs text-white opacity-60">CVV ***</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <p class="text-sm font-semibold text-white">UZU UNION BUSINESS</p>
+                                    <div class="flex gap-1">
+                                        <div class="w-8 h-6 rounded bg-white/20"></div>
+                                        <div class="w-8 h-6 rounded bg-white/20 -ml-3"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div class="flex items-center gap-2 text-uzu-yellow"><i class="fa-solid fa-bolt"></i><span class="text-sm font-semibold">2% unlimited cash back</span></div>
+                            <ul class="space-y-2.5">
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Employee cards</li>
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Expense categorization</li>
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Accounting integration</li>
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Higher limits</li>
+                                <li class="flex items-center gap-2.5 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-uzu-yellow/60 shrink-0"></span>Chip & PIN technology</li>
+                            </ul>
+                            <div class="p-3 rounded-xl bg-uzu-950/60 border border-uzu-800 space-y-2">
+                                <div class="flex items-center gap-2 text-xs text-gray-400"><i class="fa-solid fa-lock text-uzu-yellow text-[10px]"></i><span>$10,000 daily ATM limit</span></div>
+                                <div class="flex items-center gap-2 text-xs text-gray-400"><i class="fa-solid fa-globe text-uzu-yellow text-[10px]"></i><span>$50,000 online purchase limit</span></div>
+                                <div class="flex items-center gap-2 text-xs text-gray-400"><i class="fa-solid fa-shield text-uzu-yellow text-[10px]"></i><span>Contactless / Apple Pay / Google Pay</span></div>
+                            </div>
+                            <a href="auth.html?mode=register" class="block w-full py-3 rounded-xl border border-uzu-yellow/30 text-uzu-yellow font-semibold text-sm text-center hover:bg-uzu-yellow/10 transition-all">Apply Now <i class="fa-solid fa-arrow-right ml-1"></i></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             MOBILE BANKING
+             ════════════════════════════════════════════════════════════════ -->
+        <section class="py-20 lg:py-28 relative overflow-hidden" aria-label="Mobile banking">
+            <div class="absolute inset-0 pointer-events-none">
+                <div class="absolute top-1/2 right-0 w-[400px] h-[400px] bg-uzu-yellow/5 rounded-full blur-[120px]"></div>
+            </div>
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+                    <!-- Phone Mockup -->
+                    <div class="relative flex justify-center reveal">
+                        <div class="relative w-[280px] sm:w-[320px]">
+                            <div class="relative bg-uzu-900 rounded-[3rem] border-4 border-uzu-700 p-4 shadow-2xl animate-float">
+                                <div class="absolute top-0 left-1/2 -translate-x-1/2 w-24 h-6 bg-uzu-950 rounded-b-2xl z-10"></div>
+                                <div class="bg-uzu-950 rounded-[2.25rem] overflow-hidden">
+                                    <div class="bg-uzu-900 px-6 pt-8 pb-3 flex items-center justify-between text-[10px] text-gray-400">
+                                        <span>9:41</span>
+                                        <div class="flex gap-1"><div class="w-3 h-3 rounded-full bg-uzu-yellow/20 border border-uzu-yellow/30 flex items-center justify-center"><div class="w-1.5 h-1.5 rounded-full bg-uzu-yellow"></div></div></div>
+                                    </div>
+                                    <div class="px-4 pb-6 space-y-4">
+                                        <div><p class="text-[10px] text-gray-500">Total Balance</p><p class="text-xl font-bold text-white">$30,900.80</p></div>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <div class="bg-uzu-900 rounded-xl p-3"><p class="text-[9px] text-gray-500">Checking</p><p class="text-sm font-bold text-white">$12,480</p></div>
+                                            <div class="bg-uzu-900 rounded-xl p-3 border border-uzu-yellow/20"><p class="text-[9px] text-gray-500">Savings</p><p class="text-sm font-bold text-uzu-yellow">$18,420</p></div>
+                                        </div>
+                                        <div class="grid grid-cols-4 gap-2">
+                                            <div class="flex flex-col items-center gap-1"><div class="w-10 h-10 rounded-full bg-uzu-900 border border-uzu-800 flex items-center justify-center"><div class="w-4 h-4 rounded-full bg-uzu-yellow/20"></div></div><span class="text-[9px] text-gray-400">Send</span></div>
+                                            <div class="flex flex-col items-center gap-1"><div class="w-10 h-10 rounded-full bg-uzu-900 border border-uzu-800 flex items-center justify-center"><div class="w-4 h-4 rounded-full bg-uzu-yellow/20"></div></div><span class="text-[9px] text-gray-400">Deposit</span></div>
+                                            <div class="flex flex-col items-center gap-1"><div class="w-10 h-10 rounded-full bg-uzu-900 border border-uzu-800 flex items-center justify-center"><div class="w-4 h-4 rounded-full bg-uzu-yellow/20"></div></div><span class="text-[9px] text-gray-400">Pay</span></div>
+                                            <div class="flex flex-col items-center gap-1"><div class="w-10 h-10 rounded-full bg-uzu-900 border border-uzu-800 flex items-center justify-center"><div class="w-4 h-4 rounded-full bg-uzu-yellow/20"></div></div><span class="text-[9px] text-gray-400">Cards</span></div>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <p class="text-[9px] text-gray-500 uppercase tracking-wider">Recent</p>
+                                            <div class="flex items-center justify-between py-1.5">
+                                                <div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400 text-[8px] font-bold">D</div><div><p class="text-[10px] text-white font-medium">Direct Deposit</p><p class="text-[8px] text-gray-500">Today</p></div></div>
+                                                <span class="text-[10px] font-semibold text-emerald-400">+$3,420</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Features -->
+                    <div class="space-y-8 reveal reveal-delay-2">
+                        <div class="space-y-4">
+                            <span class="text-xs font-mono text-uzu-yellow tracking-widest uppercase font-semibold">Mobile Banking</span>
+                            <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white">Your Bank in Your <span class="text-gradient-yellow">Pocket</span></h2>
+                            <p class="text-gray-400 text-sm sm:text-base max-w-lg">Full-service banking from anywhere. Instant transfers, mobile deposits, and 24/7 account access — all secured with biometric authentication.</p>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                            <div class="glass-panel rounded-2xl p-5 space-y-3">
+                                <div class="w-10 h-10 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/20 flex items-center justify-center text-uzu-yellow"><i class="fa-solid fa-arrow-right-arrow-left"></i></div>
+                                <h3 class="text-sm font-bold text-white">Instant Transfers</h3>
+                                <p class="text-xs text-gray-400 leading-relaxed">Send money to any UZU member instantly. External transfers arrive in minutes, not days.</p>
+                            </div>
+                            <div class="glass-panel rounded-2xl p-5 space-y-3">
+                                <div class="w-10 h-10 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/20 flex items-center justify-center text-uzu-yellow"><i class="fa-solid fa-clock"></i></div>
+                                <h3 class="text-sm font-bold text-white">24/7 Account Access</h3>
+                                <p class="text-xs text-gray-400 leading-relaxed">Full banking control from your phone. Check balances, pay bills, and manage cards anytime.</p>
+                            </div>
+                            <div class="glass-panel rounded-2xl p-5 space-y-3">
+                                <div class="w-10 h-10 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/20 flex items-center justify-center text-uzu-yellow"><i class="fa-solid fa-camera"></i></div>
+                                <h3 class="text-sm font-bold text-white">Mobile Check Deposit</h3>
+                                <p class="text-xs text-gray-400 leading-relaxed">Deposit checks in seconds. Just snap a photo and the funds are on their way.</p>
+                            </div>
+                            <div class="glass-panel rounded-2xl p-5 space-y-3">
+                                <div class="w-10 h-10 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/20 flex items-center justify-center text-uzu-yellow"><i class="fa-solid fa-shield"></i></div>
+                                <h3 class="text-sm font-bold text-white">Bank-Grade Security</h3>
+                                <p class="text-xs text-gray-400 leading-relaxed">Biometric login, real-time fraud monitoring, and instant card freeze if your phone is lost.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             SECURITY GRID
+             ════════════════════════════════════════════════════════════════ -->
+        <section id="security" class="py-20 lg:py-28 bg-uzu-900/40 border-t border-uzu-800 relative" aria-label="Security features">
+            <div class="absolute inset-0 pointer-events-none"><div class="absolute top-0 left-1/4 w-[300px] h-[300px] bg-uzu-yellow/3 rounded-full blur-[100px]"></div></div>
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                <div class="text-center max-w-3xl mx-auto space-y-4 mb-14 reveal">
+                    <span class="text-xs font-mono text-uzu-yellow tracking-widest uppercase font-semibold">Security</span>
+                    <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white">Bank-Grade <span class="text-gradient-yellow">Security</span></h2>
+                    <p class="text-gray-400 text-sm sm:text-base">Your security is our foundation. We use the same encryption and monitoring technology trusted by the world's largest financial institutions.</p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-6">
+                    <div class="glass-panel rounded-2xl p-6 space-y-5 group relative overflow-hidden reveal reveal-delay-1">
+                        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-uzu-yellow/0 via-uzu-yellow/50 to-uzu-yellow/0 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="w-12 h-12 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/20 flex items-center justify-center text-uzu-yellow group-hover:scale-110 transition-transform"><i class="fa-solid fa-lock text-xl"></i></div>
+                        <div><h3 class="text-base font-bold text-white mb-2">End-to-End Encryption</h3><p class="text-sm text-gray-400 leading-relaxed">All your data is encrypted with AES-256 — the same standard used by governments and militaries worldwide.</p></div>
+                        <div class="pt-4 border-t border-uzu-800"><div class="text-2xl font-bold text-uzu-yellow">AES-256</div><div class="text-xs text-gray-500">Encryption</div></div>
+                    </div>
+                    <div class="glass-panel rounded-2xl p-6 space-y-5 group relative overflow-hidden reveal reveal-delay-2">
+                        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-uzu-yellow/0 via-uzu-yellow/50 to-uzu-yellow/0 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="w-12 h-12 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/20 flex items-center justify-center text-uzu-yellow group-hover:scale-110 transition-transform"><i class="fa-solid fa-eye text-xl"></i></div>
+                        <div><h3 class="text-base font-bold text-white mb-2">Real-Time Fraud Alerts</h3><p class="text-sm text-gray-400 leading-relaxed">AI-powered monitoring scans every transaction 24/7. Get instant push notifications for any suspicious activity.</p></div>
+                        <div class="pt-4 border-t border-uzu-800"><div class="text-2xl font-bold text-uzu-yellow">99.9%</div><div class="text-xs text-gray-500">Detection Rate</div></div>
+                    </div>
+                    <div class="glass-panel rounded-2xl p-6 space-y-5 group relative overflow-hidden reveal reveal-delay-3">
+                        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-uzu-yellow/0 via-uzu-yellow/50 to-uzu-yellow/0 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="w-12 h-12 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/20 flex items-center justify-center text-uzu-yellow group-hover:scale-110 transition-transform"><i class="fa-solid fa-fingerprint text-xl"></i></div>
+                        <div><h3 class="text-base font-bold text-white mb-2">Biometric MFA</h3><p class="text-sm text-gray-400 leading-relaxed">Multi-factor authentication with fingerprint, Face ID, and hardware security keys. Your identity, protected.</p></div>
+                        <div class="pt-4 border-t border-uzu-800"><div class="text-2xl font-bold text-uzu-yellow">3-Factor</div><div class="text-xs text-gray-500">Authentication</div></div>
+                    </div>
+                    <div class="glass-panel rounded-2xl p-6 space-y-5 group relative overflow-hidden reveal">
+                        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-uzu-yellow/0 via-uzu-yellow/50 to-uzu-yellow/0 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="w-12 h-12 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/20 flex items-center justify-center text-uzu-yellow group-hover:scale-110 transition-transform"><i class="fa-solid fa-file-shield text-xl"></i></div>
+                        <div><h3 class="text-base font-bold text-white mb-2">FDIC Insurance</h3><p class="text-sm text-gray-400 leading-relaxed">Deposits insured up to $250,000 per depositor by the FDIC. Your money is safe with us.</p></div>
+                        <div class="pt-4 border-t border-uzu-800"><div class="text-2xl font-bold text-uzu-yellow">$250K</div><div class="text-xs text-gray-500">FDIC Insured</div></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             FAQ
+             ════════════════════════════════════════════════════════════════ -->
+        <section id="faq" class="py-20 lg:py-28 relative" aria-label="Frequently asked questions">
+            <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center space-y-4 mb-14 reveal">
+                    <span class="text-xs font-mono text-uzu-yellow tracking-widest uppercase font-semibold">FAQ</span>
+                    <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white">Questions? We've Got <span class="text-gradient-yellow">Answers</span></h2>
+                </div>
+                <div class="space-y-3" id="faq-container">
+                    <!-- FAQ items will be populated by JS -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         FOOTER
+         ════════════════════════════════════════════════════════════════ -->
+    <footer class="bg-uzu-900/80 border-t border-uzu-800 pt-16 pb-8 text-gray-400 text-sm" role="contentinfo">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-8 pb-12 border-b border-uzu-800">
+                <div class="col-span-2 md:col-span-1 space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-xl bg-uzu-yellow flex items-center justify-center"><span class="text-uzu-950 font-extrabold text-sm">U</span></div>
+                        <span class="text-base font-extrabold text-white">UZU <span class="text-uzu-yellow">UNION</span></span>
+                    </div>
+                    <p class="text-xs leading-relaxed text-gray-500">Smarter banking for everyone. Zero fees, high-yield savings, and bank-grade security.</p>
+                    <div class="flex gap-3 pt-2">
+                        <a href="#" class="w-8 h-8 rounded-lg bg-uzu-800 border border-uzu-700 flex items-center justify-center text-xs font-bold text-gray-400 hover:text-uzu-yellow hover:border-uzu-yellow/30 transition-colors">X</a>
+                        <a href="#" class="w-8 h-8 rounded-lg bg-uzu-800 border border-uzu-700 flex items-center justify-center text-xs font-bold text-gray-400 hover:text-uzu-yellow hover:border-uzu-yellow/30 transition-colors">LI</a>
+                        <a href="#" class="w-8 h-8 rounded-lg bg-uzu-800 border border-uzu-700 flex items-center justify-center text-xs font-bold text-gray-400 hover:text-uzu-yellow hover:border-uzu-yellow/30 transition-colors">IG</a>
+                        <a href="#" class="w-8 h-8 rounded-lg bg-uzu-800 border border-uzu-700 flex items-center justify-center text-xs font-bold text-gray-400 hover:text-uzu-yellow hover:border-uzu-yellow/30 transition-colors">FB</a>
+                    </div>
+                </div>
+                <div><h4 class="text-xs font-bold text-white uppercase tracking-wider mb-4">Accounts</h4><ul class="space-y-2.5"><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Checking Account</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Savings Account</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Joint Accounts</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Business Banking</a></li></ul></div>
+                <div><h4 class="text-xs font-bold text-white uppercase tracking-wider mb-4">Services</h4><ul class="space-y-2.5"><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Wire Transfers</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Bill Pay</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Mobile Deposits</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Card Services</a></li></ul></div>
+                <div><h4 class="text-xs font-bold text-white uppercase tracking-wider mb-4">Company</h4><ul class="space-y-2.5"><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">About UZU UNION</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Careers</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Press</a></li><li><a href="#" class="text-xs text-gray-500 hover:text-uzu-yellow transition-colors">Contact Us</a></li></ul></div>
+            </div>
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 pt-8">
+                <div class="text-xs text-gray-500">&copy; 2026 UZU UNION Bank N.A. All rights reserved. Member FDIC.</div>
+                <div class="flex gap-6 text-xs">
+                    <a href="#" class="text-gray-500 hover:text-uzu-yellow transition-colors">Privacy Policy</a>
+                    <a href="#" class="text-gray-500 hover:text-uzu-yellow transition-colors">Terms of Service</a>
+                    <a href="#" class="text-gray-500 hover:text-uzu-yellow transition-colors">Accessibility</a>
+                    <a href="#" class="text-gray-500 hover:text-uzu-yellow transition-colors">Disclosures</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="/assets/js/router.js"></script>
+    <script src="/assets/js/auth.js"></script>
+    <script src="/assets/js/fx-rates.js"></script>
+    <script src="/assets/js/simulator.js"></script>
+    <script>
+        // Mobile menu toggle
+        document.getElementById('mobile-toggle')?.addEventListener('click', function() {
+            const menu = document.getElementById('mobile-menu');
+            menu.classList.toggle('hidden');
+            const icon = this.querySelector('i');
+            icon.classList.toggle('fa-bars');
+            icon.classList.toggle('fa-x');
+        });
+
+        // FAQ Accordion
+        const faqs = [
+            { q: 'How do I open an account?', a: 'Opening an account takes less than 5 minutes. Simply click "Get Started", provide your email, full name, and basic information. No minimum deposit required. You\'ll receive instant access to your new checking and savings accounts.' },
+            { q: 'Are there any monthly fees?', a: 'No. UZU UNION has zero monthly maintenance fees on all personal checking and savings accounts. No minimum balance requirements. No hidden fees. We believe banking should be free and transparent.' },
+            { q: 'How is my money protected?', a: 'Your deposits are FDIC insured up to $250,000 per depositor. Additionally, we employ AES-256 encryption, real-time fraud monitoring, biometric multi-factor authentication, and instant card freeze capabilities.' },
+            { q: 'How do I deposit and withdraw money?', a: 'You can deposit via direct deposit, mobile check deposit (snap a photo), wire transfer, or ACH transfer. Withdrawals are free at 50,000+ fee-free ATMs nationwide, or you can transfer instantly to an external account.' },
+            { q: 'What is the APY on savings accounts?', a: 'Our High-Yield Savings account offers competitive variable APY with no minimum balance requirements. Interest compounds daily and is credited monthly. Rates are updated regularly based on market conditions.' },
+            { q: 'Can I open a joint or business account?', a: 'Yes! We offer joint personal accounts and full business banking suites. Business accounts include merchant payment processing, cash flow dashboards, team expense cards, and accounting software integration.' },
+        ];
+
+        const container = document.getElementById('faq-container');
+        if (container) {
+            faqs.forEach((faq, i) => {
+                const div = document.createElement('div');
+                div.className = 'rounded-2xl bg-uzu-900/60 border border-uzu-800 overflow-hidden transition-all duration-300';
+                div.innerHTML = `
+                    <button class="w-full flex items-center justify-between px-6 py-5 text-left text-white font-medium hover:bg-uzu-800/50 transition-colors"
+                        onclick="this.parentElement.classList.toggle('is-open'); this.nextElementSibling.classList.toggle('max-h-96'); this.nextElementSibling.classList.toggle('max-h-0'); this.nextElementSibling.classList.toggle('opacity-100'); this.nextElementSibling.classList.toggle('opacity-0'); this.querySelector('i').classList.toggle('rotate-180')"
+                        aria-expanded="false">
+                        <span class="text-sm sm:text-base pr-4">${faq.q}</span>
+                        <i class="fa-solid fa-chevron-down text-uzu-yellow shrink-0 transition-transform duration-300"></i>
+                    </button>
+                    <div class="overflow-hidden transition-all duration-300 max-h-0 opacity-0">
+                        <div class="px-6 pb-5 text-sm text-gray-400 leading-relaxed">${faq.a}</div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // Scroll reveal
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.classList.add('visible');
+            });
+        }, { threshold: 0.1 });
+        document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+    </script>
+</body>
+</html>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Modular Scripts -->
+    <script src="/assets/utils/toast.js"></script>
+    <script src="/assets/modules/crypto.js"></script>
+    <script src="/assets/modules/landing.js"></script>
+</body>
+</html>

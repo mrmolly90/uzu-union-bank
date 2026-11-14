@@ -1,0 +1,49 @@
+import { NextRequest, NextResponse } from 'next/server';
+import jwt from 'jsonwebtoken';
+import { prisma } from '@/lib/prisma';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'uzu-production-secret-change-me';
+
+function verifyAdmin(req: NextRequest) {
+  const auth = req.headers.get('authorization');
+  if (!auth?.startsWith('Bearer ')) return null;
+  try {
+    const decoded = jwt.verify(auth.slice(7), JWT_SECRET) as any;
+    // Customer access tokens are signed with the same secret but carry no role.
+    if (!decoded || !decoded.role) return null;
+    return decoded;
+  } catch { return null; }
+}
+
+export async function PATCH(req: NextRequest) {
+  const admin = verifyAdmin(req);
+  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    const { accountId, isActive } = await req.json();
+
+    if (!accountId || isActive === undefined) {
+      return NextResponse.json({ error: 'accountId and isActive required' }, { status: 400 });
+    }
+
+    const account = await prisma.account.update({
+      where: { id: accountId },
+      data: { isActive },
+    });
+
+    // Notify the user
+    await prisma.notification.create({
+      data: {
+        userId: account.userId,
+        title: isActive ? 'Account Activated' : 'Account Deactivated',
+        message: `Your ${account.accountType === 'CHECKING' ? 'Checking' : 'Savings'} account (${account.currency}) has been ${isActive ? 'activated' : 'deactivated'} by admin.`,
+        type: 'INFO',
+      },
+    });
+
+    return NextResponse.json(account);
+  } catch (err) {
+    console.error('[Admin Account Status]', err);
+    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
+  }
+}
