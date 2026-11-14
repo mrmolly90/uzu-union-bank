@@ -9,5 +9,9 @@
   "env": {
     "NODE_ENV": "production"
   },
-  "crons": []
+  "crons": [],
+  "github": {
+    "silent": true,
+    "autoJobCancelation": true
+  }
 }
