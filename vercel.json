@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npx prisma generate --schema=prisma/schema.vercel.prisma && npx prisma db push --schema=prisma/schema.vercel.prisma --accept-data-loss && npx next build",
+  "buildCommand": "npx prisma generate --schema=prisma/schema.vercel.prisma && npx next build",
   "devCommand": "next dev",
   "installCommand": "npm install",
   "outputDirectory": ".next",
