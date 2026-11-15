@@ -73,8 +73,8 @@ export default function TransferPage() {
   // with no CHK/SAV marker, so filtering on the string alone emptied both
   // columns and broke the whole transfer flow. `includes` stays as a fallback
   // for legacy rows still stored as UZU-CHK-…/UZU-SAV-….
-  const checkingAccounts = accounts.filter(a => a.accountType === 'CHECKING' || a.accountNumber?.includes('CHK'));
-  const savingsAccounts = accounts.filter(a => a.accountType === 'SAVINGS' || a.accountNumber?.includes('SAV'));
+  const checkingAccounts = accounts.filter(a => a.accountType === 'CHECKING' || (a.accountNumber && a.accountNumber.includes('CHK')));
+  const savingsAccounts = accounts.filter(a => a.accountType === 'SAVINGS' || (a.accountNumber && a.accountNumber.includes('SAV')));
   const totalChecking = checkingAccounts.reduce((s, a) => s + Number(a.balance), 0);
   const totalSavings = savingsAccounts.reduce((s, a) => s + Number(a.balance), 0);
   const primaryChecking = checkingAccounts.find(a => a.currency === form.fromCurrency) || checkingAccounts[0];

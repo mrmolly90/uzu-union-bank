@@ -66,24 +66,31 @@ export async function POST(req: NextRequest) {
             bankPinHash,
             fullName,
             countryCode,
+            phone: typeof body.phone === 'string' ? body.phone.trim() || null : null,
+            dob: typeof body.dob === 'string' ? body.dob || null : null,
+            address: typeof body.address === 'string' ? body.address.trim() || null : null,
+            occupation: typeof body.occupation === 'string' ? body.occupation.trim() || null : null,
+            idNumber: typeof body.idNumber === 'string' ? body.idNumber.trim() || null : null,
             accounts: { create: openingAccounts },
           },
           include: { accounts: true },
         });
 
-        const tokens = await createAuthTokens(user);
+        try {
+          await prisma.notification.create({
+            data: {
+              userId: user.id,
+              title: 'Welcome to UZU UNION',
+              message:
+                'Your account is ready. Checking and Savings accounts have been opened successfully.',
+              type: 'INFO',
+            },
+          });
+        } catch (notificationError) {
+          console.error('[Register] welcome notification creation failed', notificationError);
+        }
 
-        await prisma.notification.create({
-          data: {
-            userId: user.id,
-            title: 'Welcome to UZU UNION',
-            message:
-              'Your account is ready. Checking and Savings accounts have been opened successfully.',
-            type: 'INFO',
-          },
-        });
-
-        return NextResponse.json({ user: sanitizeUser(user), tokens }, { status: 201 });
+        return NextResponse.json({ user: sanitizeUser(user) }, { status: 201 });
       } catch (err) {
         lastError = err;
         if (!isUniqueViolation(err)) throw err;

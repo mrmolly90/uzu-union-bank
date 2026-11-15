@@ -77,7 +77,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const exchangeRate = rate ? Number(rate.rate) : 0.925;
+    if (!rate) {
+      return NextResponse.json(
+        { error: `Exchange rate ${sourceAccount.currency}/${destinationCurrency} is unavailable.` },
+        { status: 503 }
+      );
+    }
+
+    const exchangeRate = Number(rate.rate);
     const destinationAmount = sourceAmount * exchangeRate;
     const transferFee = fee || Math.max(3, sourceAmount * 0.001);
 

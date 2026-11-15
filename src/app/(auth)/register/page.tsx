@@ -47,11 +47,11 @@ export default function RegisterPage() {
       if (!form.countryCode) newErrors.countryCode = 'Select a country';
     }
     if (s === 2) {
-      if (!form.fullName) newErrors.fullName = 'Full name required';
+      if (!form.fullName.trim()) newErrors.fullName = 'Full name required';
       if (!form.dob) newErrors.dob = 'Date of birth required';
-      if (!form.phone) newErrors.phone = 'Phone required';
+      if (!form.phone.trim()) newErrors.phone = 'Phone required';
     }
-    if (s === 4) {
+    if (s === 3) {
       if (!form.bankPin || !/^\d{4}$/.test(form.bankPin)) newErrors.bankPin = 'Bank PIN must be exactly 4 digits';
       if (form.bankPin !== form.confirmBankPin) newErrors.confirmBankPin = 'PINs must match';
     }
@@ -64,7 +64,7 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateStep(4)) return;
+    if (!validateStep(3)) return;
     setLoading(true);
     try {
       await register({
@@ -73,6 +73,11 @@ export default function RegisterPage() {
         bankPin: form.bankPin,
         fullName: form.fullName,
         countryCode: form.countryCode,
+        phone: form.phone,
+        dob: form.dob,
+        address: form.address,
+        occupation: form.occupation,
+        idNumber: form.idNumber,
       });
     } catch (err: any) {
       setErrors({ submit: err.message });
@@ -144,7 +149,7 @@ export default function RegisterPage() {
 
           {/* Step Indicator */}
           <div className="flex gap-2 mb-6">
-            {[1, 2, 3, 4].map((s) => (
+            {[1, 2, 3].map((s) => (
               <div
                 key={s}
                 className={`flex-1 h-1 rounded-full transition-all duration-300 ${
@@ -211,60 +216,13 @@ export default function RegisterPage() {
                 </div>
                 <div className="flex gap-3 pt-2">
                   <Button type="button" variant="secondary" className="flex-1" onClick={prevStep}>Back</Button>
-                  <Button type="button" className="flex-1" onClick={() => setStep(3)}>Continue</Button>
+                  <Button type="button" className="flex-1" onClick={nextStep}>Continue</Button>
                 </div>
               </div>
             )}
 
-            {/* Step 3 */}
+            {/* Step 3: Bank PIN Setup */}
             {step === 3 && (
-              <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-uzu-900/60 border border-uzu-800">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-gray-300">Two-Factor Authentication</span>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-9 h-5 bg-uzu-800 rounded-full peer peer-checked:bg-uzu-yellow after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
-                    </label>
-                  </div>
-                  <p className="text-xs text-gray-400">TOTP-based 2FA configured after account creation.</p>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Security Question 1</label>
-                  <select className="w-full px-4 py-3 rounded-xl bg-uzu-900/80 border border-uzu-700 text-white text-sm mb-2 focus:border-uzu-yellow focus:ring-2 focus:ring-uzu-yellow/20 transition-all outline-none">
-                    <option>What was your first pet&apos;s name?</option>
-                    <option>What city were you born in?</option>
-                    <option>What is your mother&apos;s maiden name?</option>
-                  </select>
-                  <input className="w-full px-4 py-3 rounded-xl bg-uzu-900/80 border border-uzu-700 text-white text-sm focus:border-uzu-yellow focus:ring-2 focus:ring-uzu-yellow/20 transition-all outline-none" type="text" placeholder="Your answer" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1.5">Security Question 2</label>
-                  <select className="w-full px-4 py-3 rounded-xl bg-uzu-900/80 border border-uzu-700 text-white text-sm mb-2 focus:border-uzu-yellow focus:ring-2 focus:ring-uzu-yellow/20 transition-all outline-none">
-                    <option>What was your first job?</option>
-                    <option>What is your favorite book?</option>
-                    <option>What is the model of your first car?</option>
-                  </select>
-                  <input className="w-full px-4 py-3 rounded-xl bg-uzu-900/80 border border-uzu-700 text-white text-sm focus:border-uzu-yellow focus:ring-2 focus:ring-uzu-yellow/20 transition-all outline-none" type="text" placeholder="Your answer" />
-                </div>
-                <div className="p-4 rounded-xl bg-uzu-yellow/5 border border-uzu-yellow/20">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" className="mt-0.5 accent-uzu-yellow" required />
-                    <span className="text-xs text-gray-400 leading-relaxed">
-                      I acknowledge and agree to the <a href="#" className="text-uzu-yellow">Terms of Service</a>,{' '}
-                      <a href="#" className="text-uzu-yellow">Privacy Policy</a>, and AML/CTF compliance requirements.
-                    </span>
-                  </label>
-                </div>
-                <div className="flex gap-3">
-                  <Button type="button" variant="secondary" className="flex-1" onClick={prevStep}>Back</Button>
-                  <Button type="button" className="flex-1" onClick={() => setStep(4)}>Continue</Button>
-                </div>
-              </div>
-            )}
-
-            {/* Step 4: Bank PIN Setup */}
-            {step === 4 && (
               <div className="space-y-4">
                 <div className="p-4 rounded-xl bg-uzu-yellow/5 border border-uzu-yellow/20 flex items-start gap-3">
                   <div className="w-10 h-10 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/30 flex items-center justify-center text-uzu-yellow shrink-0">

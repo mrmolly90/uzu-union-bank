@@ -4,7 +4,14 @@ import crypto from 'crypto';
 import { getPrisma } from '@/lib/prisma';
 import type { AuthTokens, UserProfile } from '@/types';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'uzu-production-secret-change-me';
+export function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET?.trim();
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET must be configured in production.');
+  }
+  return 'uzu-local-development-secret';
+}
 const JWT_EXPIRES_IN = '15m';
 const REFRESH_EXPIRES_IN = '7d';
 
@@ -23,7 +30,7 @@ export function generateAccessToken(user: {
   id: string;
   email: string;
 }): string {
-  return jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, {
+  return jwt.sign({ sub: user.id, email: user.email }, getJwtSecret(), {
     expiresIn: JWT_EXPIRES_IN,
   });
 }
@@ -36,7 +43,7 @@ export function verifyAccessToken(
   token: string
 ): { sub: string; email: string } | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as { sub: string; email: string };
+    return jwt.verify(token, getJwtSecret()) as { sub: string; email: string };
   } catch {
     return null;
   }

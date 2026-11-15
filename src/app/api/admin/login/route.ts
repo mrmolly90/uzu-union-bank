@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getPrisma } from '@/lib/prisma';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'uzu-production-secret-change-me';
+import { getJwtSecret } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     const token = jwt.sign(
       { sub: admin.id, email: admin.email, role: admin.role },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '8h' }
     );
 

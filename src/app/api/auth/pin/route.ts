@@ -5,7 +5,8 @@ import { verifyPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { email, bankPin } = body;
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const { bankPin } = body ?? {};
 
     if (!email || !bankPin) {
       return NextResponse.json(

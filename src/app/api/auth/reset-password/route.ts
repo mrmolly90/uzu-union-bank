@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/prisma';
-import { hashPassword } from '@/lib/auth';
+import { hashPassword, verifyAccessToken } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, bankPin } = await req.json();
+    // Require authentication to reset password
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+    const decoded = verifyAccessToken(authHeader.slice(7));
+    if (!decoded) {
+      return NextResponse.json({ error: 'Invalid or expired token.' }, { status: 401 });
+    }
+
+    const { password, bankPin } = await req.json();
     
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password required.' }, { status: 400 });
+    if (!password) {
+      return NextResponse.json({ error: 'Password required.' }, { status: 400 });
     }
 
     const prisma = getPrisma();
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
     
     if (!user) {
       return NextResponse.json({ error: 'User not found.' }, { status: 404 });

@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { getPrisma } from '@/lib/prisma';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'uzu-production-secret-change-me';
+import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization');
   if (!auth?.startsWith('Bearer ')) return null;
   try {
-    const decoded = jwt.verify(auth.slice(7), JWT_SECRET) as any;
+    const decoded = jwt.verify(auth.slice(7), getJwtSecret()) as any;
     // Customer access tokens are signed with the same secret but carry no role.
     if (!decoded || !decoded.role) return null;
     return decoded;

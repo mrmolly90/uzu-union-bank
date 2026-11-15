@@ -48,6 +48,7 @@ const config: Config = {
         'orbit': 'orbit 12s linear infinite',
         'orbit-reverse': 'orbit 15s linear infinite reverse',
         'progress': 'progress 2.5s ease-in-out forwards',
+              'bounce': 'bounce 1s ease-in-out infinite',
       },
       keyframes: {
         float: {
@@ -74,6 +75,10 @@ const config: Config = {
           '0%': { width: '0%' },
           '100%': { width: '100%' },
         },
+                bounce: {
+                  '0%, 100%': { transform: 'scale(1)' },
+                  '50%': { transform: 'scale(1.15)' },
+                },
       },
     },
   },

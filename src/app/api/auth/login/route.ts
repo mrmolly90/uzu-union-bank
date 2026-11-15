@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/prisma';
-import { verifyPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
+import { verifyPassword, sanitizeUser } from '@/lib/auth';
 import { loginSchema } from '@/lib/validations';
 
 export async function POST(req: NextRequest) {
@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
     }
 
     const { email, password } = parsed.data;
-    const user = await prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
       return NextResponse.json(
@@ -25,11 +26,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const tokens = await createAuthTokens(user);
-
     return NextResponse.json({
       user: sanitizeUser(user),
-      tokens,
     });
   } catch (err) {
     console.error('[Login]', err);

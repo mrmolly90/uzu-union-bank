@@ -47,8 +47,9 @@ function createAuthRateLimiter() {
 
 /* --- Body parsing --- */
 function setupBodyParser(app) {
-  app.use(require('express').json({ limit: config.bodyLimit }));
-  app.use(require('express').urlencoded({ extended: true, limit: config.bodyLimit }));
+  const express = require('express');
+  app.use(express.json({ limit: config.bodyLimit }));
+  app.use(express.urlencoded({ extended: true, limit: config.bodyLimit }));
 }
 
 /* --- Global error handler --- */

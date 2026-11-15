@@ -52,7 +52,7 @@ function createApp() {
       service: 'Uzu Union Bank API',
       version: '1.0.0',
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
+      uptime: process.uptime ? process.uptime() : process.resources?.cpu?.usage?.toFixed(2) || 'N/A',
     });
   });
 
@@ -64,7 +64,8 @@ function createApp() {
 
   // --- SPA fallback ---
   app.get('*', (req, res) => {
-    const filePath = path.join(clientDir, 'pages', req.path === '/' ? 'index.html' : req.path);
+    const requestPath = req.path || req.url.split('?')[0];
+    const filePath = path.join(clientDir, 'pages', requestPath === '/' ? 'index.html' : requestPath);
     res.sendFile(filePath, (err) => {
       if (err) res.sendFile(path.join(clientDir, 'pages', 'index.html'));
     });

@@ -27,8 +27,11 @@ async function fetchApi<T>(
   });
 
   if (res.status === 401) {
-    // Try refresh
-    if (tokens?.refreshToken) {
+    // Login, PIN verification, and registration are public routes; do not
+    // attempt an unrelated refresh when they reject submitted credentials.
+    const isPublicAuthRoute =
+      path === '/auth/login' || path === '/auth/pin' || path === '/auth/register';
+    if (!isPublicAuthRoute && tokens?.refreshToken) {
       const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -40,17 +43,24 @@ async function fetchApi<T>(
         useAuthStore.getState().setAuth(data.user, data.tokens);
         headers['Authorization'] = `Bearer ${data.tokens.accessToken}`;
         const retryRes = await fetch(`${API_BASE}${path}`, { ...options, headers });
-        if (!retryRes.ok) throw new Error('Request failed after refresh');
+        if (!retryRes.ok) {
+          const error = await retryRes.json().catch(() => ({ error: 'Request failed after refresh.' }));
+          throw new Error(error.error || `HTTP ${retryRes.status}`);
+        }
         return retryRes.json();
       }
     }
-    useAuthStore.getState().clearAuth();
-    throw new Error('Session expired');
+    if (!isPublicAuthRoute) {
+      useAuthStore.getState().clearAuth();
+      throw new Error('Session expired. Please sign in again.');
+    }
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const err = await res.json().catch(() => null);
+    throw new Error(
+      typeof err?.error === 'string' ? err.error : `Request failed (${res.status}). Please try again.`
+    );
   }
 
   return res.json();
@@ -59,16 +69,6 @@ async function fetchApi<T>(
 export function useApi() {
   const { clearAuth } = useAuthStore();
   const router = useRouter();
-
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await fetchApi<{ user: any; tokens: any }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    useAuthStore.getState().setAuth(data.user, data.tokens);
-    toast('success', 'Welcome back!');
-    router.push('/dashboard');
-  }, [router]);
 
   const verifyPin = useCallback(async (email: string, bankPin: string) => {
     const data = await fetchApi<{ user: any; tokens: any }>('/auth/pin', {
@@ -86,14 +86,18 @@ export function useApi() {
     bankPin: string;
     fullName: string;
     countryCode: string;
+    phone?: string;
+    dob?: string;
+    address?: string;
+    occupation?: string;
+    idNumber?: string;
   }) => {
-    const result = await fetchApi<{ user: any; tokens: any }>('/auth/register', {
+    await fetchApi<{ user: any }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    useAuthStore.getState().setAuth(result.user, result.tokens);
     toast('success', 'Account created successfully!');
-    router.push('/dashboard');
+    router.push('/login?registered=1');
   }, [router]);
 
   const logout = useCallback(() => {
@@ -117,5 +121,5 @@ export function useApi() {
     });
   }, []);
 
-  return { login, verifyPin, register, logout, getAccounts, getTransactions, createTransfer };
+  return { verifyPin, register, logout, getAccounts, getTransactions, createTransfer };
 }

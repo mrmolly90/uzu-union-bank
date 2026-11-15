@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const prisma = getPrisma();
@@ -12,6 +14,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(addresses);
   } catch (err) {
     console.error('[Crypto Addresses]', err);
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
+    return NextResponse.json({ error: 'Crypto addresses are temporarily unavailable.' }, { status: 503 });
   }
 }

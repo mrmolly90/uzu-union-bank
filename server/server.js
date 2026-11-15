@@ -77,7 +77,7 @@ app.get('/api/status', function (req, res) {
     service: 'Uzu Union Bank API',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
+    uptime: process.uptime ? process.uptime() : process.resources?.cpu?.usage?.toFixed(2) || 'N/A',
   });
 });
 
@@ -87,7 +87,8 @@ app.use(express.static(PUBLIC_DIR, { maxAge: '1h', etag: true, extensions: ['htm
 
 /* --- SPA fallback — only for non-file, non-API routes --- */
 app.get('*', function (req, res) {
-  var filePath = path.join(PUBLIC_DIR, req.path === '/' ? 'index.html' : req.path);
+  var requestPath = req.path || req.url.split('?')[0];
+  var filePath = path.join(PUBLIC_DIR, requestPath === '/' ? 'index.html' : requestPath);
   res.sendFile(filePath, function (err) {
     if (err) {
       res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
