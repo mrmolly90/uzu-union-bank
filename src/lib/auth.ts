@@ -45,7 +45,7 @@ export function verifyAccessToken(
 export async function createAuthTokens(
   user: { id: string; email: string }
 ): Promise<AuthTokens> {
-  const prisma = await getPrisma();
+  const prisma = getPrisma();
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken();
 
@@ -67,7 +67,7 @@ export async function createAuthTokens(
 export async function refreshAccessToken(
   refreshTokenStr: string
 ): Promise<AuthTokens | null> {
-  const prisma = await getPrisma();
+  const prisma = getPrisma();
   const stored = await prisma.refreshToken.findUnique({
     where: { token: refreshTokenStr },
     include: { user: true },

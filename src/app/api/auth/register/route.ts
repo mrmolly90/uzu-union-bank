@@ -23,7 +23,7 @@ function isUniqueViolation(err: unknown): boolean {
 
 export async function POST(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const body = await req.json().catch(() => null);
     if (!body) {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });

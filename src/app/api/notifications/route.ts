@@ -4,7 +4,7 @@ import { verifyAccessToken } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const auth = req.headers.get('authorization');
     if (!auth?.startsWith('Bearer ')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const decoded = verifyAccessToken(auth.slice(7));
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const auth = req.headers.get('authorization');
     if (!auth?.startsWith('Bearer ')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const decoded = verifyAccessToken(auth.slice(7));

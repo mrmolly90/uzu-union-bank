@@ -3,7 +3,7 @@ import { getPrisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const addresses = await prisma.cryptoAddress.findMany({
       where: { isActive: true },
       orderBy: { symbol: 'asc' },

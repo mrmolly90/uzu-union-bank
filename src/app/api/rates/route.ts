@@ -3,7 +3,7 @@ import { getPrisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const rates = await prisma.exchangeRate.findMany();
     return NextResponse.json(rates);
   } catch (err) {

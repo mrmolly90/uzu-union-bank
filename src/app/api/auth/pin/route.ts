@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const user = await prisma.user.findUnique({ where: { email } });
 
     if (!user || !user.bankPinHash || !(await verifyPassword(bankPin, user.bankPinHash))) {

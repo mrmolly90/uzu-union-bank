@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     // Decode to get user
     const decoded = jwt.decode(tokens.accessToken) as { sub: string; email: string };
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
 
     return NextResponse.json({

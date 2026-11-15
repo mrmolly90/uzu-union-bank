@@ -5,7 +5,7 @@ import { loginSchema } from '@/lib/validations';
 
 export async function POST(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const body = await req.json();
     const parsed = loginSchema.safeParse(body);
     if (!parsed.success) {

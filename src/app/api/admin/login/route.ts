@@ -7,7 +7,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'uzu-production-secret-change-me';
 
 export async function POST(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const { email, password } = await req.json();
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password required.' }, { status: 400 });

@@ -20,7 +20,7 @@ export async function PATCH(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const prisma = await getPrisma();
+    const prisma = getPrisma();
     const { accountId, isActive } = await req.json();
 
     if (!accountId || isActive === undefined) {
