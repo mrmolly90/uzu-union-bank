@@ -11,24 +11,34 @@
       seeded database from ./prisma/uzu_bank.db
    3. After every Prisma write operation, upload the DB back to Blob Store
    4. The Prisma client is wrapped to auto-sync after mutations
+   
+   NOTE: Without BLOB_READ_WRITE_TOKEN env var, the database is ephemeral
+   and resets on each cold start. Set this token in Vercel dashboard under
+   Storage → Blob for persistent data across cold starts.
    ========================================================================== */
 
 import { PrismaClient } from '@prisma/client';
 import path from 'path';
 import fs from 'fs';
 import { Buffer } from 'buffer';
-import { put, get } from '@vercel/blob';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-const BLOB_STORE_KEY = 'uzu_bank.db';
 const TMP_DB_PATH = '/tmp/prisma/uzu_bank.db';
 const BUILD_DB_PATH = 'prisma/uzu_bank.db';
 
-// ─── Blob Store helpers ────────────────────────────────────────────────────
+let blobAvailable = false;
+try {
+  const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_OIDC_TOKEN;
+  blobAvailable = !!BLOB_TOKEN;
+} catch {}
+
+// ─── Blob Store helpers (only used when token is available) ────────────────
 
 async function downloadDbFromBlob(): Promise<boolean> {
+  if (!blobAvailable) return false;
   try {
-    const response = await get(BLOB_STORE_KEY, { access: 'private' });
+    const { get } = await import('@vercel/blob');
+    const response = await get('uzu_bank.db', { access: 'private' });
     if (!response || !response.blob) return false;
     
     const tmpDir = '/tmp/prisma';
@@ -57,12 +67,14 @@ async function downloadDbFromBlob(): Promise<boolean> {
 }
 
 async function uploadDbToBlob(): Promise<void> {
+  if (!blobAvailable) return;
   try {
     if (!fs.existsSync(TMP_DB_PATH)) return;
     
     const data = fs.readFileSync(TMP_DB_PATH);
+    const { put } = await import('@vercel/blob');
     
-    await put(BLOB_STORE_KEY, data, {
+    await put('uzu_bank.db', data, {
       access: 'private',
       contentType: 'application/octet-stream',
       addRandomSuffix: false,
@@ -152,15 +164,13 @@ export async function getPrisma(): Promise<PrismaClient> {
   // Wrap mutation methods to sync DB to Blob Store after writes
   const isVercel = process.env.VERCEL === '1';
   
-  if (isVercel) {
+  if (isVercel && blobAvailable) {
     const syncAfterWrite = async (original: Function, ...args: any[]) => {
       const result = await original.apply(client, args);
-      // Upload to Blob Store after every write operation
       await uploadDbToBlob();
       return result;
     };
     
-    // Wrap key model methods that perform writes
     const models = ['user', 'account', 'transaction', 'notification', 'refreshToken', 'auditLog', 'admin', 'cryptoAddress', 'exchangeRate'];
     for (const modelName of models) {
       const model = (client as any)[modelName];
@@ -175,7 +185,6 @@ export async function getPrisma(): Promise<PrismaClient> {
       }
     }
     
-    // Also wrap $transaction
     const originalTransaction = client.$transaction.bind(client);
     client.$transaction = ((arg: any, options?: any) => {
       return originalTransaction(arg, options).then(async (result: any) => {
