@@ -105,7 +105,7 @@ export default function TestPage() {
         });
         const acctsData = await accts.json();
         if (Array.isArray(acctsData)) {
-          updateResult('4. Get Accounts', { status: 'pass', data: { count: acctsData.length, currencies: [...new Set(acctsData.map((a: any) => a.currency))].join(', ') } });
+          updateResult('4. Get Accounts', { status: 'pass', data: { count: acctsData.length, currencies: Array.from(new Set(acctsData.map((a: any) => a.currency))).join(', ') } });
         } else {
           updateResult('4. Get Accounts', { status: 'fail', message: acctsData.error || 'Invalid response' });
         }
