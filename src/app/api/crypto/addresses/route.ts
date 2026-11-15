@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   try {
+    const prisma = await getPrisma();
     const addresses = await prisma.cryptoAddress.findMany({
       where: { isActive: true },
       orderBy: { symbol: 'asc' },

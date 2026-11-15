@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { prisma } from '@/lib/prisma';
+import crypto from 'crypto';
+import { getPrisma } from '@/lib/prisma';
 import type { AuthTokens, UserProfile } from '@/types';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'uzu-production-secret-change-me';
@@ -28,7 +29,6 @@ export function generateAccessToken(user: {
 }
 
 export function generateRefreshToken(): string {
-  const crypto = require('crypto');
   return crypto.randomBytes(40).toString('hex');
 }
 
@@ -45,6 +45,7 @@ export function verifyAccessToken(
 export async function createAuthTokens(
   user: { id: string; email: string }
 ): Promise<AuthTokens> {
+  const prisma = await getPrisma();
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken();
 
@@ -66,6 +67,7 @@ export async function createAuthTokens(
 export async function refreshAccessToken(
   refreshTokenStr: string
 ): Promise<AuthTokens | null> {
+  const prisma = await getPrisma();
   const stored = await prisma.refreshToken.findUnique({
     where: { token: refreshTokenStr },
     include: { user: true },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import jwt from 'jsonwebtoken';
 import { refreshAccessToken, sanitizeUser } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +22,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Decode to get user
-    const decoded = require('jsonwebtoken').decode(tokens.accessToken);
+    const decoded = jwt.decode(tokens.accessToken);
+    const prisma = await getPrisma();
     const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
 
     return NextResponse.json({

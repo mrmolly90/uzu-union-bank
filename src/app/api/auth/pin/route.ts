@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import { verifyPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const prisma = await getPrisma();
     const user = await prisma.user.findUnique({ where: { email } });
 
     if (!user || !user.bankPinHash || !(await verifyPassword(bankPin, user.bankPinHash))) {

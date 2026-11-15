@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
 
+    const prisma = await getPrisma();
     const accounts = await prisma.account.findMany({
       where: { userId: decoded.sub },
       orderBy: { currency: 'asc' },

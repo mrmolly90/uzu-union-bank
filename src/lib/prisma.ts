@@ -1,53 +1,120 @@
+/* ==========================================================================
+   UZU UNION BANK — Prisma Client with Vercel Blob Store persistence
+   
+   On Vercel serverless, the /tmp filesystem is ephemeral — every cold
+   start gets a fresh environment. To persist user data across cold starts
+   we store the SQLite database file in Vercel Blob Store.
+   
+   Flow:
+   1. On cold start, download the latest DB from Blob Store to /tmp/
+   2. If no DB exists in Blob Store (first deploy ever), use the build-time
+      seeded database from ./prisma/uzu_bank.db
+   3. After every Prisma write operation, upload the DB back to Blob Store
+   4. The Prisma client is wrapped to auto-sync after mutations
+   ========================================================================== */
+
 import { PrismaClient } from '@prisma/client';
 import path from 'path';
 import fs from 'fs';
+import { put, get, head } from '@vercel/blob';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-let schemaPushed = false;
+const BLOB_STORE_KEY = 'uzu_bank.db';
+const TMP_DB_PATH = '/tmp/prisma/uzu_bank.db';
+const BUILD_DB_PATH = 'prisma/uzu_bank.db';
 
-function ensureSchema() {
-  if (schemaPushed) return;
-  schemaPushed = true;
+// ─── Blob Store helpers ────────────────────────────────────────────────────
+
+async function downloadDbFromBlob(): Promise<boolean> {
+  try {
+    const response = await get(BLOB_STORE_KEY);
+    if (!response || !response.body) return false;
+    
+    const tmpDir = '/tmp/prisma';
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    
+    const buffer = await response.arrayBuffer();
+    fs.writeFileSync(TMP_DB_PATH, Buffer.from(buffer));
+    console.log('[Blob] Downloaded DB from Blob Store');
+    return true;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes('NOT_FOUND')) {
+      console.log('[Blob] No DB in Blob Store yet');
+      return false;
+    }
+    console.error('[Blob] Download failed:', err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+async function uploadDbToBlob(): Promise<void> {
+  try {
+    if (!fs.existsSync(TMP_DB_PATH)) return;
+    
+    const data = fs.readFileSync(TMP_DB_PATH);
+    const blob = new Blob([data]);
+    
+    await put(BLOB_STORE_KEY, blob, {
+      contentType: 'application/octet-stream',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    console.log('[Blob] Uploaded DB to Blob Store');
+  } catch (err) {
+    console.error('[Blob] Upload failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+function copyBuildDbToTemp(): boolean {
+  const buildDb = path.join(process.cwd(), BUILD_DB_PATH);
+  if (fs.existsSync(buildDb)) {
+    const tmpDir = '/tmp/prisma';
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    fs.copyFileSync(buildDb, TMP_DB_PATH);
+    console.log('[Prisma] Copied build DB to', TMP_DB_PATH);
+    return true;
+  }
+  console.warn('[Prisma] Build DB not found at', buildDb);
+  return false;
+}
+
+// ─── Ensure schema on Vercel ───────────────────────────────────────────────
+
+let schemaInitialized = false;
+
+async function ensureSchema(): Promise<void> {
+  if (schemaInitialized) return;
+  schemaInitialized = true;
   
   const isVercel = process.env.VERCEL === '1';
   if (!isVercel) return;
   
-  const tmpDir = '/tmp/prisma';
-  const tmpDb = path.join(tmpDir, 'uzu_bank.db');
-  
   console.log('[Prisma] ensureSchema called');
-  console.log('[Prisma] cwd:', process.cwd());
   
-  // Create tmp dir if needed
-  if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
-  }
+  // Try to download from Blob Store first
+  const downloaded = await downloadDbFromBlob();
   
-  // The database was created during the build step at ./prisma/uzu_bank.db.
-  // On Vercel serverless, the filesystem is read-only except /tmp, so we
-  // copy the pre-built database to /tmp where it can be written to.
-  const buildDb = path.join(process.cwd(), 'prisma', 'uzu_bank.db');
-  if (fs.existsSync(buildDb)) {
-    fs.copyFileSync(buildDb, tmpDb);
-    console.log('[Prisma] Copied DB from', buildDb, 'to', tmpDb);
-  } else {
-    console.warn('[Prisma] Build DB not found at', buildDb, '- creating empty database');
-    // Create an empty file so Prisma can open it (tables will be missing)
-    fs.writeFileSync(tmpDb, '');
+  if (!downloaded) {
+    // No DB in Blob Store yet — use the build-time seeded database
+    copyBuildDbToTemp();
+    // Upload the seeded DB to Blob Store so future cold starts get it
+    await uploadDbToBlob();
   }
   
   // Update DATABASE_URL to point to /tmp
-  process.env.DATABASE_URL = `file:${tmpDb}`;
+  process.env.DATABASE_URL = `file:${TMP_DB_PATH}`;
   console.log('[Prisma] DATABASE_URL set to:', process.env.DATABASE_URL);
 }
 
-function createPrismaClient() {
-  const isVercel = process.env.VERCEL === '1';
-  let url = process.env.DATABASE_URL || 'file:./prisma/uzu_bank.db';
+// ─── Create Prisma client ──────────────────────────────────────────────────
 
-  // On Vercel, copy DB to /tmp and update URL before creating client
+async function createPrismaClient() {
+  const isVercel = process.env.VERCEL === '1';
+  let url = process.env.DATABASE_URL || `file:./${BUILD_DB_PATH}`;
+
+  // On Vercel, sync DB from Blob Store and update URL before creating client
   if (isVercel) {
-    ensureSchema();
+    await ensureSchema();
     url = process.env.DATABASE_URL || url;
   }
 
@@ -67,6 +134,57 @@ function createPrismaClient() {
   return client;
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+// ─── Wrapped Prisma client that syncs to Blob after writes ─────────────────
+
+export async function getPrisma(): Promise<PrismaClient> {
+  if (globalForPrisma.prisma) return globalForPrisma.prisma;
+  
+  const client = await createPrismaClient();
+  
+  // Wrap mutation methods to sync DB to Blob Store after writes
+  const isVercel = process.env.VERCEL === '1';
+  
+  if (isVercel) {
+    const syncAfterWrite = async (original: Function, ...args: any[]) => {
+      const result = await original.apply(client, args);
+      // Upload to Blob Store after every write operation
+      await uploadDbToBlob();
+      return result;
+    };
+    
+    // Wrap key model methods that perform writes
+    const models = ['user', 'account', 'transaction', 'notification', 'refreshToken', 'auditLog', 'admin', 'cryptoAddress', 'exchangeRate'];
+    for (const modelName of models) {
+      const model = (client as any)[modelName];
+      if (!model) continue;
+      
+      const writeMethods = ['create', 'update', 'upsert', 'delete', 'createMany', 'updateMany', 'deleteMany'];
+      for (const method of writeMethods) {
+        const original = model[method];
+        if (original) {
+          model[method] = async (...args: any[]) => syncAfterWrite(original, ...args);
+        }
+      }
+    }
+    
+    // Also wrap $transaction
+    const originalTransaction = client.$transaction;
+    const wrappedTransaction = async (arg: any, options?: any) => {
+      const result = await originalTransaction.call(client, arg, options);
+      await uploadDbToBlob();
+      return result;
+    };
+    client.$transaction = wrappedTransaction;
+  }
+  
+  globalForPrisma.prisma = client;
+  return client;
+}
+
+// For backward compatibility — non-async access returns a client but
+// on Vercel the Blob sync happens lazily. Prefer getPrisma() in API routes.
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({
+  log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+});
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;

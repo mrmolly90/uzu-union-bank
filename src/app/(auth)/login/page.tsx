@@ -35,9 +35,9 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
+      const result = await res.json();
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Invalid credentials');
+        throw new Error(result.error || 'Invalid credentials');
       }
       // Credentials valid - now ask for PIN
       setStep('pin');
@@ -56,16 +56,15 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const data = await fetch('/api/auth/pin', {
+      const res = await fetch('/api/auth/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, bankPin }),
       });
-      if (!data.ok) {
-        const err = await data.json();
-        throw new Error(err.error || 'Invalid bank PIN');
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error || 'Invalid bank PIN');
       }
-      const result = await data.json();
       // Show access granted screen
       setStep('granted');
       // Store auth and redirect after showing success

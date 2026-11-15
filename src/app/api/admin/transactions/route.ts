@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 
@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const prisma = await getPrisma();
   const transactions = await prisma.transaction.findMany({
     include: { sourceAccount: true, initiatedBy: true },
     orderBy: { createdAt: 'desc' },
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
+    const prisma = await getPrisma();
     const { userId, type, amount, currency, description, accountType } = await req.json();
 
     if (!userId || !amount || !currency) {

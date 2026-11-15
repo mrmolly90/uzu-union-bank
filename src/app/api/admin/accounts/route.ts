@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'uzu-production-secret-change-me';
 
@@ -20,6 +20,7 @@ export async function PATCH(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
+    const prisma = await getPrisma();
     const { accountId, isActive } = await req.json();
 
     if (!accountId || isActive === undefined) {
