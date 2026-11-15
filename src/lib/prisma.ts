@@ -63,15 +63,39 @@ async function uploadDbToBlob(): Promise<void> {
 }
 
 function copyBuildDbToTemp(): boolean {
-  const buildDb = path.join(process.cwd(), BUILD_DB_PATH);
-  if (fs.existsSync(buildDb)) {
-    const tmpDir = '/tmp/prisma';
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-    fs.copyFileSync(buildDb, TMP_DB_PATH);
-    console.log('[Prisma] Copied build DB to', TMP_DB_PATH);
-    return true;
+  // Try multiple possible locations for the build DB
+  const possiblePaths = [
+    path.join(process.cwd(), BUILD_DB_PATH),
+    path.join(process.cwd(), '..', BUILD_DB_PATH),
+    path.resolve(BUILD_DB_PATH),
+    BUILD_DB_PATH,
+  ];
+  
+  // Also check if DATABASE_URL already points to a valid file
+  const dbUrl = process.env.DATABASE_URL || '';
+  if (dbUrl.startsWith('file:')) {
+    const filePath = dbUrl.replace('file:', '').trim();
+    if (fs.existsSync(filePath)) {
+      const tmpDir = '/tmp/prisma';
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+      fs.copyFileSync(filePath, TMP_DB_PATH);
+      console.log('[Prisma] Copied DB from DATABASE_URL to', TMP_DB_PATH);
+      return true;
+    }
+    possiblePaths.push(filePath);
   }
-  console.warn('[Prisma] Build DB not found at', buildDb);
+  
+  for (const buildDb of possiblePaths) {
+    if (fs.existsSync(buildDb)) {
+      const tmpDir = '/tmp/prisma';
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+      fs.copyFileSync(buildDb, TMP_DB_PATH);
+      console.log('[Prisma] Copied build DB from', buildDb, 'to', TMP_DB_PATH);
+      return true;
+    }
+  }
+  
+  console.warn('[Prisma] Build DB not found. Tried:', possiblePaths.join(', '));
   return false;
 }
 
@@ -92,11 +116,25 @@ async function ensureSchema(): Promise<void> {
   const downloaded = await downloadDbFromBlob();
   
   if (!downloaded) {
-    copyBuildDbToTemp();
-    await uploadDbToBlob();
+    const copied = copyBuildDbToTemp();
+    if (copied) {
+      await uploadDbToBlob();
+      process.env.DATABASE_URL = `file:${TMP_DB_PATH}`;
+    } else {
+      // Fall back to the build DB path directly
+      const fallbackPath = path.resolve(BUILD_DB_PATH);
+      if (fs.existsSync(fallbackPath)) {
+        process.env.DATABASE_URL = `file:${fallbackPath}`;
+        console.log('[Prisma] Using build DB directly at', fallbackPath);
+      } else {
+        // Last resort: use the DATABASE_URL from env
+        console.warn('[Prisma] No database file found, using DATABASE_URL from env');
+      }
+    }
+  } else {
+    process.env.DATABASE_URL = `file:${TMP_DB_PATH}`;
   }
   
-  process.env.DATABASE_URL = `file:${TMP_DB_PATH}`;
   console.log('[Prisma] DATABASE_URL set to:', process.env.DATABASE_URL);
 }
 
