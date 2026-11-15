@@ -16,7 +16,8 @@
 import { PrismaClient } from '@prisma/client';
 import path from 'path';
 import fs from 'fs';
-import { put, get, head } from '@vercel/blob';
+import { Buffer } from 'buffer';
+import { put, get } from '@vercel/blob';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 const BLOB_STORE_KEY = 'uzu_bank.db';
@@ -27,14 +28,22 @@ const BUILD_DB_PATH = 'prisma/uzu_bank.db';
 
 async function downloadDbFromBlob(): Promise<boolean> {
   try {
-    const response = await get(BLOB_STORE_KEY);
-    if (!response || !response.body) return false;
+    const response = await get(BLOB_STORE_KEY, { access: 'private' });
+    if (!response || !response.blob) return false;
     
     const tmpDir = '/tmp/prisma';
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
     
-    const buffer = await response.arrayBuffer();
-    fs.writeFileSync(TMP_DB_PATH, Buffer.from(buffer));
+    if (!response.stream) return false;
+    
+    const chunks: Buffer[] = [];
+    const reader = response.stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+    }
+    fs.writeFileSync(TMP_DB_PATH, Buffer.concat(chunks));
     console.log('[Blob] Downloaded DB from Blob Store');
     return true;
   } catch (err: unknown) {
@@ -52,12 +61,11 @@ async function uploadDbToBlob(): Promise<void> {
     if (!fs.existsSync(TMP_DB_PATH)) return;
     
     const data = fs.readFileSync(TMP_DB_PATH);
-    const blob = new Blob([data]);
     
-    await put(BLOB_STORE_KEY, blob, {
+    await put(BLOB_STORE_KEY, data, {
+      access: 'private',
       contentType: 'application/octet-stream',
       addRandomSuffix: false,
-      allowOverwrite: true,
     });
     console.log('[Blob] Uploaded DB to Blob Store');
   } catch (err) {
@@ -168,13 +176,13 @@ export async function getPrisma(): Promise<PrismaClient> {
     }
     
     // Also wrap $transaction
-    const originalTransaction = client.$transaction;
-    const wrappedTransaction = async (arg: any, options?: any) => {
-      const result = await originalTransaction.call(client, arg, options);
-      await uploadDbToBlob();
-      return result;
-    };
-    client.$transaction = wrappedTransaction;
+    const originalTransaction = client.$transaction.bind(client);
+    client.$transaction = ((arg: any, options?: any) => {
+      return originalTransaction(arg, options).then(async (result: any) => {
+        await uploadDbToBlob();
+        return result;
+      });
+    }) as typeof client.$transaction;
   }
   
   globalForPrisma.prisma = client;
