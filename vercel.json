@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npx prisma generate --schema=prisma/schema.vercel.prisma && DATABASE_URL=\"file:./prisma/uzu_bank.db\" npx prisma db push --schema=prisma/schema.vercel.prisma --accept-data-loss && DATABASE_URL=\"file:./prisma/uzu_bank.db\" npx tsx prisma/seed.ts && npx next build",
+  "buildCommand": "npm run vercel-build",
   "devCommand": "next dev",
   "installCommand": "npm install",
   "outputDirectory": ".next",
