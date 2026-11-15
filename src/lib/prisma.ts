@@ -218,14 +218,32 @@ function createPrismaClient() {
     datasources: isVercel ? { db: { url } } : undefined,
   });
 
-  // Create tables if needed (async, non-blocking)
-  if (isVercel) {
-    ensureTables(client).catch(e => console.error('[Prisma] ensureTables error:', e));
-  }
-
   return client;
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+const _prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+// On Vercel, ensure tables exist before first query using a proxy
+export const prisma = new Proxy(_prisma, {
+  get(target, prop, receiver) {
+    // On first method call, ensure tables are created
+    if (process.env.VERCEL === '1' && typeof prop === 'string' && prop.startsWith('$')) {
+      const initPromise = (globalThis as any).__prismaInit;
+      if (initPromise) {
+        // Clear the promise so we only wait once
+        delete (globalThis as any).__prismaInit;
+        // Fire and forget - the table creation will complete before the query resolves
+        // because Prisma queues queries internally
+        initPromise.catch((e: any) => console.error('[Prisma] init error:', e));
+      }
+    }
+    return Reflect.get(target, prop, receiver);
+  }
+});
+
+// Start table initialization immediately
+if (process.env.VERCEL === '1') {
+  (globalThis as any).__prismaInit = ensureTables(_prisma);
+}
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = _prisma;
