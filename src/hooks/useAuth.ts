@@ -29,8 +29,7 @@ async function fetchApi<T>(
   if (res.status === 401) {
     // Login, PIN verification, and registration are public routes; do not
     // attempt an unrelated refresh when they reject submitted credentials.
-    const isPublicAuthRoute =
-      path === '/auth/login' || path === '/auth/pin' || path === '/auth/register';
+    const isPublicAuthRoute = path === '/auth/register';
     if (!isPublicAuthRoute && tokens?.refreshToken) {
       const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
@@ -69,16 +68,6 @@ async function fetchApi<T>(
 export function useApi() {
   const { clearAuth } = useAuthStore();
   const router = useRouter();
-
-  const verifyPin = useCallback(async (email: string, bankPin: string) => {
-    const data = await fetchApi<{ user: any; tokens: any }>('/auth/pin', {
-      method: 'POST',
-      body: JSON.stringify({ email, bankPin }),
-    });
-    useAuthStore.getState().setAuth(data.user, data.tokens);
-    toast('success', 'PIN verified!');
-    router.push('/dashboard');
-  }, [router]);
 
   const register = useCallback(async (data: {
     email: string;
@@ -121,5 +110,5 @@ export function useApi() {
     });
   }, []);
 
-  return { verifyPin, register, logout, getAccounts, getTransactions, createTransfer };
+  return { register, logout, getAccounts, getTransactions, createTransfer };
 }

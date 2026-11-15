@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useApi } from '@/hooks/useAuth';
@@ -21,7 +20,6 @@ const COUNTRIES = [
 ];
 
 export default function RegisterPage() {
-  const router = useRouter();
   const { register } = useApi();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
