@@ -30,7 +30,7 @@ function ensureSchema() {
   
   // Write init script to /tmp and execute it
   // This avoids escaping issues with inline code
-  const initScriptPath = '/tmp/prisma/init-db.mjs';
+  const initScriptPath = '/tmp/prisma/init-db.cjs';
   const initScript = `
 const { PrismaClient } = require('@prisma/client');
 const client = new PrismaClient({ datasources: { db: { url: 'file:${tmpDb}' } } });
