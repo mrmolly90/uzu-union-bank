@@ -61,7 +61,8 @@ const client = new PrismaClient({ datasources: { db: { url: 'file:${tmpDb}' } } 
     try { await client.\$executeRawUnsafe(sql); } catch(e) { console.error('SQL error:', e.message); }
   }
   console.log('Tables created successfully');
-  await client.\$disconnect();
+    await client.\$disconnect();
+  }
 })().catch(e => { console.error(e); process.exit(1); });
 `;
   
