@@ -13,33 +13,23 @@ function ensureSchema() {
   const isVercel = process.env.VERCEL === '1';
   if (!isVercel) return;
   
-  // On Vercel, the build creates the DB at /vercel/path0/prisma/uzu_bank.db
-  // but runtime is at /var/task/ which is read-only.
-  // We must copy the DB to /tmp/ which is writable.
-  const sourceDb = path.resolve(process.cwd(), 'prisma', 'uzu_bank.db');
   const tmpDir = '/tmp/prisma';
   const tmpDb = path.join(tmpDir, 'uzu_bank.db');
   
   console.log('[Prisma] ensureSchema called');
   console.log('[Prisma] cwd:', process.cwd());
-  console.log('[Prisma] source DB exists:', fs.existsSync(sourceDb));
   
   // Create tmp dir if needed
   if (!fs.existsSync(tmpDir)) {
     fs.mkdirSync(tmpDir, { recursive: true });
   }
   
-  // Copy DB to /tmp if not already there
-  if (fs.existsSync(sourceDb) && !fs.existsSync(tmpDb)) {
-    fs.copyFileSync(sourceDb, tmpDb);
-    console.log('[Prisma] Copied DB to /tmp');
-  }
-  
   // Update DATABASE_URL to point to /tmp
   process.env.DATABASE_URL = `file:${tmpDb}`;
   console.log('[Prisma] DATABASE_URL set to:', process.env.DATABASE_URL);
   
-  // Run init-db script synchronously to ensure tables exist
+  // Run init-db script synchronously to create tables
+  // This script uses @prisma/client (always available) to create the DB and tables
   const scriptPath = path.resolve(process.cwd(), 'scripts', 'init-db.cjs');
   if (fs.existsSync(scriptPath)) {
     console.log('[Prisma] Running init-db script...');
