@@ -154,12 +154,24 @@ async function createPrismaClient() {
   return client;
 }
 
+// ─── WAL mode for better concurrent access ────────────────────────��────────
+
+async function enableWalMode(client: PrismaClient): Promise<void> {
+  try {
+    await client.$queryRawUnsafe('PRAGMA journal_mode=WAL');
+    await client.$queryRawUnsafe('PRAGMA busy_timeout=5000');
+  } catch {}
+}
+
 // ─── Wrapped Prisma client that syncs to Blob after writes ─────────────────
 
 export async function getPrisma(): Promise<PrismaClient> {
   if (globalForPrisma.prisma) return globalForPrisma.prisma;
   
   const client = await createPrismaClient();
+  
+  // Enable WAL mode for better concurrent access on Vercel
+  await enableWalMode(client);
   
   // Wrap mutation methods to sync DB to Blob Store after writes
   const isVercel = process.env.VERCEL === '1';
