@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, ensureBlobRestore } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getJwtSecret } from '@/lib/auth';
@@ -35,7 +35,6 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    await ensureBlobRestore();
     const prisma = getPrisma();
     const { userId, type, amount, currency, description, accountType } = await req.json();
 
@@ -112,9 +111,6 @@ export async function POST(req: NextRequest) {
         type: type === 'credit' ? 'CREDIT' : 'DEBIT',
       },
     });
-
-    // Persist DB to Blob Store
-    syncDbToBlob();
 
     return NextResponse.json(tx, { status: 201 });
   } catch (err) {
