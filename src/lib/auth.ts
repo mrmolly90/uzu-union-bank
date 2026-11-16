@@ -1,19 +1,15 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 import { getPrisma } from '@/lib/prisma';
 import type { AuthTokens, UserProfile } from '@/types';
 
-export function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET?.trim();
-  if (secret) return secret;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('JWT_SECRET must be configured in production.');
-  }
-  return 'uzu-local-development-secret';
-}
+const JWT_SECRET = process.env.JWT_SECRET || 'uzu-production-secret-change-me';
 const JWT_EXPIRES_IN = '15m';
 const REFRESH_EXPIRES_IN = '7d';
+
+export function getJwtSecret(): string {
+  return JWT_SECRET;
+}
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -30,12 +26,13 @@ export function generateAccessToken(user: {
   id: string;
   email: string;
 }): string {
-  return jwt.sign({ sub: user.id, email: user.email }, getJwtSecret(), {
+  return jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, {
     expiresIn: JWT_EXPIRES_IN,
   });
 }
 
 export function generateRefreshToken(): string {
+  const crypto = require('crypto');
   return crypto.randomBytes(40).toString('hex');
 }
 
@@ -43,7 +40,7 @@ export function verifyAccessToken(
   token: string
 ): { sub: string; email: string } | null {
   try {
-    return jwt.verify(token, getJwtSecret()) as { sub: string; email: string };
+    return jwt.verify(token, JWT_SECRET) as { sub: string; email: string };
   } catch {
     return null;
   }
@@ -52,7 +49,7 @@ export function verifyAccessToken(
 export async function createAuthTokens(
   user: { id: string; email: string }
 ): Promise<AuthTokens> {
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken();
 
@@ -74,7 +71,7 @@ export async function createAuthTokens(
 export async function refreshAccessToken(
   refreshTokenStr: string
 ): Promise<AuthTokens | null> {
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
   const stored = await prisma.refreshToken.findUnique({
     where: { token: refreshTokenStr },
     include: { user: true },

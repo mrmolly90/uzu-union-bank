@@ -29,7 +29,7 @@ export function Hero() {
         </h1>
 
         <p className="text-slate-400 text-lg max-w-xl leading-relaxed">
-          Experience ultra-secure digital banking engineered for global performance. Military-grade encryption, real-time fraud detection, and biometric authentication protect every transaction.
+          Experience digital banking engineered for global performance, with password and bank-PIN sign-in.
         </p>
 
         <div className="flex flex-wrap items-center gap-4">

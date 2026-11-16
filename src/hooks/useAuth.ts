@@ -80,14 +80,14 @@ export function useApi() {
     occupation?: string;
     idNumber?: string;
   }) => {
-    await fetchApi<{ user: any }>('/auth/register', {
+    const result = await fetchApi<{ user: any; tokens: any }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    clearAuth();
+    useAuthStore.getState().setAuth(result.user, result.tokens);
     toast('success', 'Account created successfully!');
-    router.push('/login?registered=1');
-  }, [clearAuth, router]);
+    router.push('/dashboard');
+  }, [router]);
 
   const logout = useCallback(() => {
     clearAuth();

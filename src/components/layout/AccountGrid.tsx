@@ -45,7 +45,7 @@ export function AccountGrid() {
           Engineered for <span className="text-bybit-yellow">Absolute Security</span>
         </h2>
         <p className="text-slate-400">
-          Every account is protected with AES-256 encryption, biometric multi-factor authentication, and 24/7 AI-powered fraud monitoring. Your financial security is our top priority.
+          Every account uses password and bank-PIN sign-in. Your financial security is our top priority.
         </p>
       </div>
 

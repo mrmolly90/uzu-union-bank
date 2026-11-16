@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/prisma';
-import { hashPassword, sanitizeUser } from '@/lib/auth';
+import { hashPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { registerSchema } from '@/lib/validations';
 import { buildOpeningAccounts } from '@/lib/accounts';
 
@@ -90,7 +90,9 @@ export async function POST(req: NextRequest) {
           console.error('[Register] welcome notification creation failed', notificationError);
         }
 
-        return NextResponse.json({ user: sanitizeUser(user) }, { status: 201 });
+        const tokens = await createAuthTokens(user);
+
+        return NextResponse.json({ user: sanitizeUser(user), tokens }, { status: 201 });
       } catch (err) {
         lastError = err;
         if (!isUniqueViolation(err)) throw err;

@@ -36,7 +36,7 @@ export function Footer() {
               </span>
             </div>
             <p className="text-xs leading-relaxed text-gray-500">
-              Secure banking for everyone. AES-256 encryption, biometric MFA, and 24/7 fraud monitoring. Your financial security is our foundation.
+              Secure banking for everyone. Sign in with your password and bank PIN. Your financial security is our foundation.
             </p>
             <div className="flex gap-3 pt-2">
               {['X', 'LI', 'IG', 'FB'].map((s) => (

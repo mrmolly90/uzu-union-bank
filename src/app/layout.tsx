@@ -19,7 +19,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'UZU UNION BANK — Secure Banking. Your Money. Protected.',
   description:
-    'Secure digital banking with AES-256 encryption, biometric multi-factor authentication, and 24/7 AI-powered fraud monitoring. Checking, Savings, and Business accounts.',
+    'Secure digital banking with email, password, and bank-PIN sign-in. Checking, Savings, and Business accounts.',
 };
 
 export default function RootLayout({

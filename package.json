@@ -13,7 +13,6 @@
     "db:push:dev": "prisma db push --schema=prisma/schema.prisma",
     "db:setup:turso": "tsx prisma/setup-turso.ts",
     "db:seed": "tsx prisma/seed.ts",
-    "server": "tsx server/index.ts",
     "lint": "next lint",
     "postinstall": "prisma generate --schema=prisma/schema.vercel.prisma",
     "deploy": "npm run build && npm start"
@@ -29,10 +28,6 @@
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "cors": "^2.8.5",
-    "express": "^4.21.0",
-    "express-rate-limit": "^7.4.1",
-    "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.453.0",
     "next": "^14.2.15",

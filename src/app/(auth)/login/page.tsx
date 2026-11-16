@@ -39,7 +39,7 @@ function LoginForm() {
     if (useAuthStore.getState().isAuthenticated) router.replace('/dashboard');
   }, [router]);
 
-  const handleCredentialsSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCredentialsSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: LoginErrors = {};
     const normalizedEmail = email.trim().toLowerCase();
@@ -51,28 +51,9 @@ function LoginForm() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    setLoading(true);
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password }),
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response, 'Could not verify credentials.'));
-      }
-
-      setEmail(normalizedEmail);
-      setErrors({});
-      setStep('pin');
-    } catch (error) {
-      setErrors({
-        password: error instanceof Error ? error.message : 'Could not verify credentials.',
-      });
-    } finally {
-      setLoading(false);
-    }
-
+    setEmail(normalizedEmail);
+    setErrors({});
+    setStep('pin');
   };
 
   const handlePinSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -84,13 +65,13 @@ function LoginForm() {
 
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/pin', {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, bankPin }),
+        body: JSON.stringify({ email, password, bankPin }),
       });
       if (!response.ok) {
-        throw new Error(await readApiError(response, 'Could not verify your bank PIN.'));
+        throw new Error(await readApiError(response, 'Could not verify sign-in details.'));
       }
 
       const result = await response.json();
@@ -100,7 +81,7 @@ function LoginForm() {
       setTimeout(() => router.replace('/dashboard'), 900);
     } catch (error) {
       setErrors({
-        bankPin: error instanceof Error ? error.message : 'Could not verify your bank PIN.',
+        form: error instanceof Error ? error.message : 'Could not verify sign-in details.',
       });
     } finally {
       setLoading(false);
@@ -280,6 +261,7 @@ function LoginForm() {
                         Your PIN is verified securely. Do not share it with anyone.
                       </p>
                     </div>
+                    {errors.form && <p className="text-sm text-red-400 mb-4" role="alert">{errors.form}</p>}
                     <Button type="submit" className="w-full" size="lg" loading={loading}>
                       Verify &amp; Sign In
                     </Button>

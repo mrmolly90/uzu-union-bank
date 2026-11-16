@@ -10,7 +10,7 @@ const faqs = [
   },
   {
     q: 'What authentication methods do you support?',
-    a: 'We support multi-factor authentication including biometric (fingerprint, Face ID), TOTP authenticator apps, SMS codes, and hardware security keys (FIDO2/WebAuthn). You can enable multiple methods for layered protection.',
+    a: 'Sign-in currently uses your email, password, and 4-digit bank PIN. Authenticator apps, biometrics, SMS codes, and hardware security keys are not currently available.',
   },
   {
     q: 'How does fraud monitoring work?',

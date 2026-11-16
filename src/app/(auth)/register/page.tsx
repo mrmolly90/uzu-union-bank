@@ -119,7 +119,7 @@ export default function RegisterPage() {
             </div>
           </div>
           <h2 className="text-3xl font-bold text-white mb-4 leading-tight">Open Your Free <span className="text-gradient-yellow">Account</span></h2>
-          <p className="text-gray-400 text-sm leading-relaxed mb-10">Bank-grade security with AES-256 encryption, real-time fraud monitoring, and biometric authentication. Get started in under 5 minutes.</p>
+          <p className="text-gray-400 text-sm leading-relaxed mb-10">Secure your account with a password and 4-digit bank PIN. Get started in under 5 minutes.</p>
           <div className="space-y-4">
             {[
               { icon: Shield, text: 'AES-256-GCM encrypted data at rest & in transit' },
