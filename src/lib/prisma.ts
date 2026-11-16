@@ -22,7 +22,7 @@ const BLOB_DB_KEY = 'uzu_bank.db';
 async function downloadFromBlob(tmpDb: string): Promise<boolean> {
   if (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.BLOB_STORE_ID) return false;
   try {
-    const baseUrl = `${process.env.BLOB_STORE_ID}.public.blob.vercel-storage.com`;
+    const baseUrl = `${process.env.BLOB_STORE_ID}.private.blob.vercel-storage.com`;
     const url = `https://${baseUrl}/${BLOB_DB_KEY}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return false;
@@ -42,7 +42,7 @@ async function uploadToBlob(tmpDb: string): Promise<void> {
   if (!process.env.BLOB_READ_WRITE_TOKEN) return;
   try {
     const buffer = fs.readFileSync(tmpDb);
-    await put(BLOB_DB_KEY, buffer, { access: 'public', addRandomSuffix: false });
+    await put(BLOB_DB_KEY, buffer, { access: 'private', addRandomSuffix: false });
     console.log('[Prisma] Uploaded DB to Blob Store');
   } catch (err) {
     console.error('[Prisma] Blob upload failed:', err);
