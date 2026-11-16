@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/prisma';
-import { verifyPassword, getJwtSecret } from '@/lib/auth';
-import jwt from 'jsonwebtoken';
+import { verifyPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
+    const { email, password, bankPin } = await req.json();
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required.' }, { status: 400 });
+    }
+
+    if (!bankPin || !/^\d{4}$/.test(bankPin)) {
+      return NextResponse.json({ error: 'Bank PIN must be exactly 4 digits.' }, { status: 400 });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -28,17 +31,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Account not fully set up. Please contact support.' }, { status: 403 });
     }
 
-    // Issue a short-lived temporary token for PIN verification
-    const tempToken = jwt.sign(
-      { sub: user.id, email: user.email, purpose: 'pin_verification' },
-      getJwtSecret(),
-      { expiresIn: '5m' }
-    );
+    const pinValid = await verifyPassword(bankPin, user.bankPinHash);
+    if (!pinValid) {
+      return NextResponse.json({ error: 'Invalid bank PIN.' }, { status: 401 });
+    }
+
+    const tokens = await createAuthTokens(user);
 
     return NextResponse.json({
-      tempToken,
-      email: user.email,
-      fullName: user.fullName,
+      user: sanitizeUser(user),
+      tokens,
     });
   } catch (err) {
     console.error('[Login]', err);

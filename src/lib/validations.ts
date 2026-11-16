@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
+  bankPin: z.string().regex(/^\d{4}$/, 'Bank PIN must be exactly 4 digits'),
 });
 
 export const registerSchema = z.object({

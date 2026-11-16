@@ -16,7 +16,6 @@ import {
   Wallet,
 } from 'lucide-react';
 
-type LoginStep = 'credentials' | 'pin' | 'granted';
 type LoginErrors = { email?: string; password?: string; bankPin?: string; form?: string };
 
 async function readApiError(response: Response, fallback: string): Promise<string> {
@@ -26,13 +25,12 @@ async function readApiError(response: Response, fallback: string): Promise<strin
 
 function LoginForm() {
   const router = useRouter();
-  const [step, setStep] = useState<LoginStep>('credentials');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [bankPin, setBankPin] = useState('');
-  const [tempToken, setTempToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<LoginErrors>({});
+  const [granted, setGranted] = useState(false);
   const mountedRef = useRef(true);
 
   // Only redirect if already authenticated AND store is hydrated
@@ -49,7 +47,7 @@ function LoginForm() {
     return () => { mountedRef.current = false; unsub(); };
   }, [router]);
 
-  const handleCredentialsSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: LoginErrors = {};
     const normalizedEmail = email.trim().toLowerCase();
@@ -57,64 +55,28 @@ function LoginForm() {
       nextErrors.email = 'Enter a valid email address.';
     }
     if (!password) nextErrors.password = 'Password is required.';
+    if (!/^\d{4}$/.test(bankPin)) nextErrors.bankPin = 'Bank PIN must be exactly 4 digits.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    // Verify credentials via API
     setLoading(true);
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password }),
+        body: JSON.stringify({ email: normalizedEmail, password, bankPin }),
       });
       if (!response.ok) {
-        throw new Error(await readApiError(response, 'Invalid email or password.'));
+        throw new Error(await readApiError(response, 'Invalid credentials.'));
       }
       const data = await response.json();
-      setTempToken(data.tempToken);
-      setEmail(normalizedEmail);
+      useAuthStore.getState().setAuth(data.user, data.tokens);
       setErrors({});
-      setStep('pin');
-    } catch (error) {
-      setErrors({
-        form: error instanceof Error ? error.message : 'Invalid email or password.',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePinSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!/^\d{4}$/.test(bankPin)) {
-      setErrors({ bankPin: 'Bank PIN must be exactly 4 digits.' });
-      return;
-    }
-    if (!tempToken) {
-      setErrors({ form: 'Session expired. Please sign in again.' });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await fetch('/api/auth/login/verify-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tempToken, bankPin }),
-      });
-      if (!response.ok) {
-        throw new Error(await readApiError(response, 'Invalid bank PIN.'));
-      }
-
-      const result = await response.json();
-      useAuthStore.getState().setAuth(result.user, result.tokens);
-      setErrors({});
-      setStep('granted');
+      setGranted(true);
       setTimeout(() => router.replace('/dashboard'), 900);
     } catch (error) {
       setErrors({
-        bankPin: error instanceof Error ? error.message : 'Invalid bank PIN.',
+        form: error instanceof Error ? error.message : 'Invalid credentials.',
       });
     } finally {
       setLoading(false);
@@ -166,7 +128,7 @@ function LoginForm() {
 
       <main className="w-full lg:w-[480px] flex flex-col justify-center p-6 sm:p-12 bg-uzu-950">
         <div className="max-w-md mx-auto w-full">
-          {step === 'granted' ? (
+          {granted ? (
             <div className="fixed inset-0 z-10 flex flex-col items-center justify-center bg-bybit-bg" role="status" aria-live="polite">
               <div className="flex flex-col items-center px-6 py-8 animate-slide-in">
                 <div className="w-20 h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-500/30 flex items-center justify-center mb-6">
@@ -185,128 +147,79 @@ function LoginForm() {
             </div>
           ) : (
             <>
-              {step === 'credentials' ? (
-                <>
-                  <div className="mb-8">
-                    <h1 className="text-2xl font-bold text-white">Welcome Back</h1>
-                    <p className="text-sm text-gray-400 mt-1">Sign in to your UZU UNION account.</p>
-                  </div>
-                  <form onSubmit={handleCredentialsSubmit} noValidate>
-                    <Input
-                      label="Email Address"
-                      id="login-email"
-                      type="email"
-                      placeholder="you@example.com"
-                      value={email}
-                      onChange={(event) => {
-                        setEmail(event.target.value);
-                        setErrors((previous) => ({ ...previous, email: undefined, password: undefined }));
-                      }}
-                      error={errors.email}
-                      autoComplete="email"
-                      autoFocus
-                      required
-                    />
-                    <Input
-                      label="Password"
-                      id="login-password"
-                      type="password"
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(event) => {
-                        setPassword(event.target.value);
-                        setErrors((previous) => ({ ...previous, password: undefined }));
-                      }}
-                      error={errors.password}
-                      showPasswordToggle
-                      autoComplete="current-password"
-                      required
-                    />
-                    {errors.form && <p className="text-sm text-red-400 mb-4" role="alert">{errors.form}</p>}
-                    <Button type="submit" className="w-full" size="lg" loading={loading}>
-                      Continue
-                    </Button>
-                  </form>
+              <div className="mb-8">
+                <h1 className="text-2xl font-bold text-white">Welcome Back</h1>
+                <p className="text-sm text-gray-400 mt-1">Sign in to your UZU UNION account.</p>
+              </div>
+              <form onSubmit={handleLogin} noValidate>
+                <Input
+                  label="Email Address"
+                  id="login-email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setErrors((previous) => ({ ...previous, email: undefined, password: undefined }));
+                  }}
+                  error={errors.email}
+                  autoComplete="email"
+                  autoFocus
+                  required
+                />
+                <Input
+                  label="Password"
+                  id="login-password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setErrors((previous) => ({ ...previous, password: undefined }));
+                  }}
+                  error={errors.password}
+                  showPasswordToggle
+                  autoComplete="current-password"
+                  required
+                />
+                <div className="mb-6">
+                  <label htmlFor="login-pin" className="block text-xs font-semibold text-gray-300 mb-1.5">
+                    4-Digit Bank PIN
+                  </label>
+                  <input
+                    className="w-full px-4 py-3 rounded-xl bg-uzu-900/80 border border-uzu-700 text-white text-sm focus:border-uzu-yellow focus:ring-2 focus:ring-uzu-yellow/20 transition-all outline-none text-center text-2xl tracking-[0.5em] font-mono"
+                    type="password"
+                    id="login-pin"
+                    placeholder="••••"
+                    maxLength={4}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="one-time-code"
+                    value={bankPin}
+                    onChange={(event) => {
+                      setBankPin(event.target.value.replace(/\D/g, '').slice(0, 4));
+                      setErrors((previous) => ({ ...previous, bankPin: undefined }));
+                    }}
+                    aria-invalid={Boolean(errors.bankPin)}
+                    aria-describedby={errors.bankPin ? 'login-pin-error' : undefined}
+                    required
+                  />
+                  {errors.bankPin && <p id="login-pin-error" className="text-xs text-red-400 mt-1" role="alert">{errors.bankPin}</p>}
+                </div>
+                {errors.form && <p className="text-sm text-red-400 mb-4" role="alert">{errors.form}</p>}
+                <Button type="submit" className="w-full" size="lg" loading={loading}>
+                  Sign In
+                </Button>
+              </form>
 
-                  <div className="mt-6 p-4 rounded-xl bg-uzu-yellow/5 border border-uzu-yellow/20">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-uzu-yellow mb-2 font-mono">
-                      <Shield size={12} className="inline mr-1" aria-hidden="true" /> Your Security Matters
-                    </p>
-                    <p className="text-xs text-gray-400 leading-relaxed">
-                      Never share your password or bank PIN. UZU UNION will not ask you to disclose them by email or phone.
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="mb-8">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-xl bg-uzu-yellow/10 border border-uzu-yellow/30 flex items-center justify-center text-uzu-yellow">
-                        <KeyRound size={20} aria-hidden="true" />
-                      </div>
-                      <div>
-                        <h1 className="text-xl font-bold text-white">Enter Bank PIN</h1>
-                        <p className="text-xs text-gray-400 mt-0.5">Step 2 of 2 — Security verification</p>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-400">
-                      Enter your 4-digit PIN to complete sign-in for{' '}
-                      <span className="text-uzu-yellow font-semibold">{email}</span>.
-                    </p>
-                  </div>
-                  <form onSubmit={handlePinSubmit} noValidate>
-                    <div className="mb-6">
-                      <label htmlFor="login-pin" className="block text-xs font-semibold text-gray-300 mb-1.5">
-                        4-Digit Bank PIN
-                      </label>
-                      <input
-                        className="w-full px-4 py-3 rounded-xl bg-uzu-900/80 border border-uzu-700 text-white text-sm focus:border-uzu-yellow focus:ring-2 focus:ring-uzu-yellow/20 transition-all outline-none text-center text-2xl tracking-[0.5em] font-mono"
-                        type="password"
-                        id="login-pin"
-                        placeholder="••••"
-                        maxLength={4}
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        autoComplete="one-time-code"
-                        value={bankPin}
-                        onChange={(event) => {
-                          setBankPin(event.target.value.replace(/\D/g, '').slice(0, 4));
-                          setErrors((previous) => ({ ...previous, bankPin: undefined }));
-                        }}
-                        aria-invalid={Boolean(errors.bankPin)}
-                        aria-describedby={errors.bankPin ? 'login-pin-error' : undefined}
-                        autoFocus
-                        required
-                      />
-                      {errors.bankPin && <p id="login-pin-error" className="text-xs text-red-400 mt-1" role="alert">{errors.bankPin}</p>}
-                    </div>
-                    <div className="p-4 rounded-xl bg-uzu-yellow/5 border border-uzu-yellow/20 flex items-start gap-3 mb-6">
-                      <div className="w-8 h-8 rounded-lg bg-uzu-yellow/10 border border-uzu-yellow/30 flex items-center justify-center text-uzu-yellow shrink-0">
-                        <Lock size={16} aria-hidden="true" />
-                      </div>
-                      <p className="text-xs text-gray-400 leading-relaxed">
-                        Your PIN is verified securely. Do not share it with anyone.
-                      </p>
-                    </div>
-                    {errors.form && <p className="text-sm text-red-400 mb-4" role="alert">{errors.form}</p>}
-                    <Button type="submit" className="w-full" size="lg" loading={loading}>
-                      Verify &amp; Sign In
-                    </Button>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => {
-                        setStep('credentials');
-                        setBankPin('');
-                        setErrors({});
-                      }}
-                      className="w-full mt-3 text-xs text-gray-500 hover:text-uzu-yellow transition-colors disabled:opacity-50"
-                    >
-                      <ArrowLeft size={12} className="inline mr-1" /> Back to credentials
-                    </button>
-                  </form>
-                </>
-              )}
+              <div className="mt-6 p-4 rounded-xl bg-uzu-yellow/5 border border-uzu-yellow/20">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-uzu-yellow mb-2 font-mono">
+                  <Shield size={12} className="inline mr-1" aria-hidden="true" /> Your Security Matters
+                </p>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  Never share your password or bank PIN. UZU UNION will not ask you to disclose them by email or phone.
+                </p>
+              </div>
 
               <p className="mt-8 text-center text-xs text-gray-500">
                 Don&apos;t have an account?{' '}
