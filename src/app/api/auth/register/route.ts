@@ -4,16 +4,10 @@ import { hashPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { registerSchema } from '@/lib/validations';
 import { buildOpeningAccounts } from '@/lib/accounts';
 
-const COUNTRY_CURRENCY: Record<string, string> = {
-  US: 'USD', GB: 'GBP', DE: 'EUR', FR: 'EUR', ES: 'EUR', IT: 'EUR', NL: 'EUR',
-  JP: 'JPY', CH: 'CHF', SG: 'SGD', AE: 'AED', AU: 'AUD', CA: 'CAD', CN: 'CNY',
-  HK: 'HKD', IN: 'INR', KR: 'KRW', MX: 'MXN', NG: 'NGN', ZA: 'ZAR', BR: 'BRL',
-  SE: 'SEK', NO: 'NOK', DK: 'DKK', PL: 'PLN', TR: 'TRY', RU: 'RUB',
-  KE: 'KES', GH: 'GHS', EG: 'EGP', SA: 'SAR',
-};
+import { getCurrencyByCountryCode } from '@/lib/countries';
 
 function getHomeCurrency(countryCode: string): string {
-  return COUNTRY_CURRENCY[countryCode] || 'USD';
+  return getCurrencyByCountryCode(countryCode);
 }
 
 /** Prisma unique-constraint violation (P2002). */

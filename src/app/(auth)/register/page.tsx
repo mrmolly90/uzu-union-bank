@@ -5,19 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useApi } from '@/hooks/useAuth';
 import { ArrowLeft, Shield, Sparkles, Wallet, KeyRound, Lock } from 'lucide-react';
-
-const COUNTRIES = [
-  { code: 'US', name: 'United States' }, { code: 'GB', name: 'United Kingdom' },
-  { code: 'DE', name: 'Germany' }, { code: 'FR', name: 'France' },
-  { code: 'JP', name: 'Japan' }, { code: 'SG', name: 'Singapore' },
-  { code: 'CH', name: 'Switzerland' }, { code: 'NG', name: 'Nigeria' },
-  { code: 'AE', name: 'UAE' }, { code: 'AU', name: 'Australia' },
-  { code: 'CA', name: 'Canada' }, { code: 'HK', name: 'Hong Kong' },
-  { code: 'BR', name: 'Brazil' }, { code: 'IN', name: 'India' },
-  { code: 'CN', name: 'China' }, { code: 'ZA', name: 'South Africa' },
-  { code: 'KE', name: 'Kenya' }, { code: 'GH', name: 'Ghana' },
-  { code: 'EG', name: 'Egypt' }, { code: 'SA', name: 'Saudi Arabia' },
-];
+import { COUNTRIES } from '@/lib/countries';
 
 export default function RegisterPage() {
   const { register } = useApi();
@@ -183,7 +171,7 @@ export default function RegisterPage() {
                   <select className="w-full px-4 py-3 rounded-xl bg-uzu-900/80 border border-uzu-700 text-white text-sm focus:border-uzu-yellow focus:ring-2 focus:ring-uzu-yellow/20 transition-all outline-none"
                     value={form.countryCode} onChange={(e) => updateField('countryCode', e.target.value)}>
                     <option value="" disabled>Select country</option>
-                    {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+                    {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}
                   </select>
                   {errors.countryCode && <p className="text-xs text-red-400 mt-1">{errors.countryCode}</p>}
                 </div>
