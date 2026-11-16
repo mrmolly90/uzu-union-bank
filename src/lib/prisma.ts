@@ -1,25 +1,61 @@
 /* ==========================================================================
    UZU UNION BANK — Prisma Client
-   Uses one lazy Prisma client and requires durable PostgreSQL in production.
+   Supports Turso (edge SQLite) on Vercel, with local SQLite fallback.
    ========================================================================== */
 
 import { PrismaClient } from '@prisma/client';
 import { createClient } from '@libsql/client';
 import { PrismaLibSQL } from '@prisma/adapter-libsql';
+import path from 'path';
+import fs from 'fs';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
-function resolveLocalDatabaseUrl(): string {
-  const configuredUrl = process.env.DATABASE_URL?.trim();
+function resolveDatabaseUrl(): string {
+  // On Vercel, copy the build-time DB to /tmp/ for writable access
+  if (process.env.VERCEL) {
+    const tmpDir = '/tmp/prisma';
+    const tmpDb = path.join(tmpDir, 'uzu_bank.db');
+    
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+    
+    // Try to find the build-time database
+    const possiblePaths = [
+      path.join(process.cwd(), 'prisma', 'uzu_bank.db'),
+      path.join(process.cwd(), 'uzu_bank.db'),
+    ];
+    
+    let copied = false;
+    for (const buildDb of possiblePaths) {
+      if (fs.existsSync(buildDb)) {
+        fs.copyFileSync(buildDb, tmpDb);
+        console.log('[Prisma] Copied DB from', buildDb, 'to', tmpDb);
+        copied = true;
+        break;
+      }
+    }
+    
+    if (!copied) {
+      // Create empty DB file as last resort
+      if (!fs.existsSync(tmpDb)) {
+        fs.writeFileSync(tmpDb, '');
+        console.warn('[Prisma] No build DB found, created empty file at', tmpDb);
+      }
+    }
+    
+    return `file:${tmpDb}`;
+  }
 
+  // Local development
+  const configuredUrl = process.env.DATABASE_URL?.trim();
   if (!configuredUrl) {
     throw new Error('DATABASE_URL must be configured for local SQLite development.');
   }
-
   if (!configuredUrl.startsWith('file:')) {
     throw new Error('Local DATABASE_URL must use a SQLite file: URL.');
   }
-
   return configuredUrl;
 }
 
@@ -53,10 +89,10 @@ function createPrismaClient(): PrismaClient {
     });
   }
 
-  // Fallback to local SQLite for development
+  // Fallback to local SQLite (handles Vercel build-time DB copy)
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-    datasources: { db: { url: resolveLocalDatabaseUrl() } },
+    datasources: { db: { url: resolveDatabaseUrl() } },
   });
 }
 
