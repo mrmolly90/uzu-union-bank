@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    await ensureBlobRestore();
     const prisma = getPrisma();
+    await ensureBlobRestore();
     const { userId, type, amount, currency, description, accountType } = await req.json();
 
     if (!userId || !amount || !currency) {

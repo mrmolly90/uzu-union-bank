@@ -22,9 +22,15 @@ const BLOB_DB_KEY = 'uzu_bank.db';
 async function downloadFromBlob(tmpDb: string): Promise<boolean> {
   if (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.BLOB_STORE_ID) return false;
   try {
+    // Use the SDK's put URL pattern: the store ID + blob key
+    // For private stores, we need to use the SDK's internal API
+    // The simplest approach: use fetch with the token as Bearer auth
     const baseUrl = `${process.env.BLOB_STORE_ID}.private.blob.vercel-storage.com`;
     const url = `https://${baseUrl}/${BLOB_DB_KEY}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` },
+      signal: AbortSignal.timeout(5000),
+    });
     if (!res.ok) return false;
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(tmpDb, buffer);
@@ -96,7 +102,7 @@ function resolveDatabaseUrl(): string {
 
 /**
  * Async initialization: tries to restore DB from Blob Store.
- * Call this once at startup before any Prisma queries.
+ * Must be called AFTER resolveDatabaseUrl() has created the tmp file.
  */
 let blobRestoreAttempted = false;
 
@@ -105,7 +111,11 @@ export async function ensureBlobRestore(): Promise<void> {
   blobRestoreAttempted = true;
   if (!process.env.VERCEL || !process.env.BLOB_READ_WRITE_TOKEN) return;
   const tmpDb = '/tmp/prisma/uzu_bank.db';
-  if (!fs.existsSync(tmpDb)) return;
+  // File must exist (created by resolveDatabaseUrl) before we can overwrite it
+  if (!fs.existsSync(tmpDb)) {
+    console.warn('[Prisma] ensureBlobRestore: tmp DB not found, skipping');
+    return;
+  }
   const restored = await downloadFromBlob(tmpDb);
   if (restored) {
     console.log('[Prisma] Successfully restored DB from Blob Store');

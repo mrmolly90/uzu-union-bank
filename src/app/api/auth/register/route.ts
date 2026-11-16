@@ -23,9 +23,9 @@ function isUniqueViolation(err: unknown): boolean {
 
 export async function POST(req: NextRequest) {
   try {
-    // Restore from Blob Store first so we don't create duplicate users
-    await ensureBlobRestore();
     const prisma = getPrisma();
+    // Restore from Blob Store so we don't create duplicate users
+    await ensureBlobRestore();
     const body = await req.json().catch(() => null);
     if (!body) {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
