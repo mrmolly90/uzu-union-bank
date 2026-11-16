@@ -48,7 +48,7 @@ async function uploadToBlob(tmpDb: string): Promise<void> {
   if (!process.env.BLOB_READ_WRITE_TOKEN) return;
   try {
     const buffer = fs.readFileSync(tmpDb);
-    await put(BLOB_DB_KEY, buffer, { access: 'private', addRandomSuffix: false });
+    await put(BLOB_DB_KEY, buffer, { access: 'private', addRandomSuffix: false, allowOverwrite: true });
     console.log('[Prisma] Uploaded DB to Blob Store');
   } catch (err) {
     console.error('[Prisma] Blob upload failed:', err);
