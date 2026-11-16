@@ -20,25 +20,35 @@ const BLOB_DB_KEY = 'uzu_bank.db';
  * Returns true if a blob was found and restored.
  */
 async function downloadFromBlob(tmpDb: string): Promise<boolean> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return false;
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    console.warn('[Prisma] BLOB_READ_WRITE_TOKEN not set, skipping download');
+    return false;
+  }
   try {
-    // Use the SDK's head() to get the blob URL, then fetch it
+    console.log('[Prisma] Attempting to download DB from Blob Store...');
     const blob = await head(BLOB_DB_KEY, {
       token: process.env.BLOB_READ_WRITE_TOKEN,
     });
-    if (!blob?.url) return false;
+    if (!blob?.url) {
+      console.log('[Prisma] No blob found in store (first time?)');
+      return false;
+    }
     
+    console.log('[Prisma] Blob found, downloading from:', blob.url.substring(0, 50) + '...');
     const res = await fetch(blob.url, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(10000),
     });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      console.error('[Prisma] Blob download HTTP error:', res.status, res.statusText);
+      return false;
+    }
     
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(tmpDb, buffer);
-    console.log('[Prisma] Restored DB from Blob Store');
+    console.log('[Prisma] Successfully restored DB from Blob Store, size:', buffer.length);
     return true;
   } catch (err) {
-    console.error('[Prisma] Blob download failed:', err);
+    console.error('[Prisma] Blob download failed:', err instanceof Error ? err.message : err);
     return false;
   }
 }
@@ -47,13 +57,18 @@ async function downloadFromBlob(tmpDb: string): Promise<boolean> {
  * Upload the database from /tmp/ to Vercel Blob Store.
  */
 async function uploadToBlob(tmpDb: string): Promise<void> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    console.warn('[Prisma] BLOB_READ_WRITE_TOKEN not set, skipping upload');
+    return;
+  }
   try {
+    const stats = fs.statSync(tmpDb);
+    console.log('[Prisma] Uploading DB to Blob Store, size:', stats.size);
     const buffer = fs.readFileSync(tmpDb);
-    await put(BLOB_DB_KEY, buffer, { access: 'private', addRandomSuffix: false, allowOverwrite: true });
-    console.log('[Prisma] Uploaded DB to Blob Store');
+    const result = await put(BLOB_DB_KEY, buffer, { access: 'private', addRandomSuffix: false, allowOverwrite: true });
+    console.log('[Prisma] Successfully uploaded DB to Blob Store, URL:', result.url?.substring(0, 50) + '...');
   } catch (err) {
-    console.error('[Prisma] Blob upload failed:', err);
+    console.error('[Prisma] Blob upload failed:', err instanceof Error ? err.message : err);
   }
 }
 
