@@ -1,51 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/prisma';
-import { verifyPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
-import { loginSchema } from '@/lib/validations';
+import { verifyPassword, getJwtSecret } from '@/lib/auth';
+import jwt from 'jsonwebtoken';
 
 export async function POST(req: NextRequest) {
   try {
-    const prisma = getPrisma();
-    const body = await req.json();
-    const parsed = loginSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.errors[0].message },
-        { status: 400 }
-      );
+    const { email, password } = await req.json();
+
+    if (!email || !password) {
+      return NextResponse.json({ error: 'Email and password are required.' }, { status: 400 });
     }
 
-    const { email, password, bankPin } = parsed.data;
     const normalizedEmail = email.trim().toLowerCase();
+    const prisma = getPrisma();
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
     if (!user) {
-      console.error('[Login] User not found:', normalizedEmail);
-      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+      return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 });
     }
 
     const passwordValid = await verifyPassword(password, user.passwordHash);
     if (!passwordValid) {
-      console.error('[Login] Password mismatch for:', normalizedEmail);
-      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+      return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 });
     }
 
     if (!user.bankPinHash) {
-      console.error('[Login] No bankPinHash for:', normalizedEmail);
-      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+      return NextResponse.json({ error: 'Account not fully set up. Please contact support.' }, { status: 403 });
     }
 
-    const pinValid = await verifyPassword(bankPin, user.bankPinHash);
-    if (!pinValid) {
-      console.error('[Login] PIN mismatch for:', normalizedEmail);
-      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
-    }
-
-    const tokens = await createAuthTokens(user);
+    // Issue a short-lived temporary token for PIN verification
+    const tempToken = jwt.sign(
+      { sub: user.id, email: user.email, purpose: 'pin_verification' },
+      getJwtSecret(),
+      { expiresIn: '5m' }
+    );
 
     return NextResponse.json({
-      user: sanitizeUser(user),
-      tokens,
+      tempToken,
+      email: user.email,
+      fullName: user.fullName,
     });
   } catch (err) {
     console.error('[Login]', err);

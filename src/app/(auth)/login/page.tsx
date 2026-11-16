@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState, useRef, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuthStore } from '@/store/auth';
@@ -27,33 +26,63 @@ async function readApiError(response: Response, fallback: string): Promise<strin
 
 function LoginForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [step, setStep] = useState<LoginStep>('credentials');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [bankPin, setBankPin] = useState('');
+  const [tempToken, setTempToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<LoginErrors>({});
+  const mountedRef = useRef(true);
 
+  // Only redirect if already authenticated AND store is hydrated
   useEffect(() => {
-    if (useAuthStore.getState().isAuthenticated) router.replace('/dashboard');
+    const { isAuthenticated, hydrated } = useAuthStore.getState();
+    if (isAuthenticated && hydrated) {
+      router.replace('/dashboard');
+    }
+    const unsub = useAuthStore.subscribe((state) => {
+      if (state.isAuthenticated && state.hydrated && mountedRef.current) {
+        router.replace('/dashboard');
+      }
+    });
+    return () => { mountedRef.current = false; unsub(); };
   }, [router]);
 
-  const handleCredentialsSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCredentialsSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: LoginErrors = {};
     const normalizedEmail = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       nextErrors.email = 'Enter a valid email address.';
     }
-
     if (!password) nextErrors.password = 'Password is required.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    setEmail(normalizedEmail);
-    setErrors({});
-    setStep('pin');
+    // Verify credentials via API
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, password }),
+      });
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Invalid email or password.'));
+      }
+      const data = await response.json();
+      setTempToken(data.tempToken);
+      setEmail(normalizedEmail);
+      setErrors({});
+      setStep('pin');
+    } catch (error) {
+      setErrors({
+        form: error instanceof Error ? error.message : 'Invalid email or password.',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePinSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -62,16 +91,20 @@ function LoginForm() {
       setErrors({ bankPin: 'Bank PIN must be exactly 4 digits.' });
       return;
     }
+    if (!tempToken) {
+      setErrors({ form: 'Session expired. Please sign in again.' });
+      return;
+    }
 
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch('/api/auth/login/verify-pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, bankPin }),
+        body: JSON.stringify({ tempToken, bankPin }),
       });
       if (!response.ok) {
-        throw new Error(await readApiError(response, 'Could not verify sign-in details.'));
+        throw new Error(await readApiError(response, 'Invalid bank PIN.'));
       }
 
       const result = await response.json();
@@ -81,7 +114,7 @@ function LoginForm() {
       setTimeout(() => router.replace('/dashboard'), 900);
     } catch (error) {
       setErrors({
-        form: error instanceof Error ? error.message : 'Could not verify sign-in details.',
+        bankPin: error instanceof Error ? error.message : 'Invalid bank PIN.',
       });
     } finally {
       setLoading(false);
@@ -152,12 +185,6 @@ function LoginForm() {
             </div>
           ) : (
             <>
-              {searchParams.get('registered') === '1' && (
-                <div className="mb-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-300" role="status">
-                  Your account is ready. Sign in with your email and password.
-                </div>
-              )}
-
               {step === 'credentials' ? (
                 <>
                   <div className="mb-8">
