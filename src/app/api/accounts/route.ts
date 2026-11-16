@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, ensureBlobRestore } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    await ensureBlobRestore();
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'No token provided.' }, { status: 401 });

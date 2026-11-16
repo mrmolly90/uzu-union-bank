@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, ensureBlobRestore } from '@/lib/prisma';
 import { verifyPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { loginSchema } from '@/lib/validations';
 
 export async function POST(req: NextRequest) {
   try {
+    // Restore from Blob Store so we can find the user
+    await ensureBlobRestore();
     const prisma = getPrisma();
     const body = await req.json();
     const parsed = loginSchema.safeParse(body);
@@ -32,6 +34,9 @@ export async function POST(req: NextRequest) {
     }
 
     const tokens = await createAuthTokens(user);
+
+    // Persist DB to Blob Store so refresh token survives cold starts
+    syncDbToBlob();
 
     return NextResponse.json({
       user: sanitizeUser(user),
