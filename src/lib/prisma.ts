@@ -1,8 +1,7 @@
 /* ==========================================================================
    UZU UNION BANK — Prisma Client
    Supports Turso (edge SQLite) on Vercel, with local SQLite fallback.
-   On Vercel, persists the SQLite DB via Vercel Blob Store so user data
-   survives cold starts.
+   On Vercel, copies the build-time seeded DB to /tmp/ for writable access.
    ========================================================================== */
 
 import { PrismaClient } from '@prisma/client';
@@ -10,65 +9,8 @@ import { createClient } from '@libsql/client';
 import { PrismaLibSQL } from '@prisma/adapter-libsql';
 import path from 'path';
 import fs from 'fs';
-import { put, head } from '@vercel/blob';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-const BLOB_DB_KEY = 'uzu_bank.db';
-
-// Store the last known Blob URL so we can download without head()
-let lastBlobUrl: string | null = null;
-
-/**
- * Download the database from Vercel Blob Store to /tmp/.
- * Returns true if a blob was found and restored.
- */
-async function downloadFromBlob(tmpDb: string): Promise<boolean> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return false;
-  }
-  try {
-    // Try to use the stored URL first, or use head() to get it
-    let url = lastBlobUrl;
-    if (!url) {
-      const blob = await head(BLOB_DB_KEY, {
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      }).catch(() => null);
-      if (blob?.url) {
-        url = blob.url;
-        lastBlobUrl = blob.url;
-      }
-    }
-    
-    if (!url) return false;
-    
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return false;
-    
-    const buffer = Buffer.from(await res.arrayBuffer());
-    fs.writeFileSync(tmpDb, buffer);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Upload the database from /tmp/ to Vercel Blob Store.
- */
-async function uploadToBlob(tmpDb: string): Promise<void> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
-  try {
-    const buffer = fs.readFileSync(tmpDb);
-    const result = await put(BLOB_DB_KEY, buffer, {
-      access: 'private',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    });
-    lastBlobUrl = result.url;
-  } catch {
-    // Silently fail - build-time DB copy will be used as fallback
-  }
-}
 
 function resolveDatabaseUrl(): string {
   const tmpDir = '/tmp/prisma';
@@ -78,9 +20,8 @@ function resolveDatabaseUrl(): string {
     fs.mkdirSync(tmpDir, { recursive: true });
   }
 
-  // On Vercel, try Blob Store first, then fall back to build-time DB copy
+  // On Vercel, copy the build-time DB to /tmp/ for writable access
   if (process.env.VERCEL) {
-    // Try to find the build-time database
     const possiblePaths = [
       path.join(process.cwd(), 'prisma', 'uzu_bank.db'),
       path.join(process.cwd(), 'uzu_bank.db'),
@@ -90,7 +31,6 @@ function resolveDatabaseUrl(): string {
     for (const buildDb of possiblePaths) {
       if (fs.existsSync(buildDb)) {
         fs.copyFileSync(buildDb, tmpDb);
-        console.log('[Prisma] Copied DB from', buildDb, 'to', tmpDb);
         copied = true;
         break;
       }
@@ -98,7 +38,6 @@ function resolveDatabaseUrl(): string {
 
     if (!copied && !fs.existsSync(tmpDb)) {
       fs.writeFileSync(tmpDb, '');
-      console.warn('[Prisma] No build DB found, created empty file at', tmpDb);
     }
 
     return `file:${tmpDb}`;
@@ -113,28 +52,6 @@ function resolveDatabaseUrl(): string {
     throw new Error('Local DATABASE_URL must use a SQLite file: URL.');
   }
   return configuredUrl;
-}
-
-/**
- * Async initialization: tries to restore DB from Blob Store.
- * Must be called AFTER resolveDatabaseUrl() has created the tmp file.
- */
-let blobRestoreAttempted = false;
-
-export async function ensureBlobRestore(): Promise<void> {
-  if (blobRestoreAttempted) return;
-  blobRestoreAttempted = true;
-  if (!process.env.VERCEL || !process.env.BLOB_READ_WRITE_TOKEN) return;
-  const tmpDb = '/tmp/prisma/uzu_bank.db';
-  // File must exist (created by resolveDatabaseUrl) before we can overwrite it
-  if (!fs.existsSync(tmpDb)) {
-    console.warn('[Prisma] ensureBlobRestore: tmp DB not found, skipping');
-    return;
-  }
-  const restored = await downloadFromBlob(tmpDb);
-  if (restored) {
-    console.log('[Prisma] Successfully restored DB from Blob Store');
-  }
 }
 
 function createPrismaClient(): PrismaClient {
@@ -167,7 +84,7 @@ function createPrismaClient(): PrismaClient {
     });
   }
 
-  // Fallback to local SQLite (handles Vercel build-time DB copy + Blob persistence)
+  // Fallback to local SQLite (handles Vercel build-time DB copy)
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     datasources: { db: { url: resolveDatabaseUrl() } },
@@ -180,16 +97,4 @@ export function getPrisma(): PrismaClient {
   const client = createPrismaClient();
   globalForPrisma.prisma = client;
   return client;
-}
-
-/**
- * Call this after any write operation to persist the DB to Blob Store.
- * Only works on Vercel with BLOB_READ_WRITE_TOKEN configured.
- */
-export async function syncDbToBlob(): Promise<void> {
-  if (!process.env.VERCEL || !process.env.BLOB_READ_WRITE_TOKEN) return;
-  const tmpDb = '/tmp/prisma/uzu_bank.db';
-  if (fs.existsSync(tmpDb)) {
-    await uploadToBlob(tmpDb);
-  }
 }

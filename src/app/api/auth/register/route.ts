@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, ensureBlobRestore } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import { hashPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { registerSchema } from '@/lib/validations';
 import { buildOpeningAccounts } from '@/lib/accounts';
@@ -24,8 +24,6 @@ function isUniqueViolation(err: unknown): boolean {
 export async function POST(req: NextRequest) {
   try {
     const prisma = getPrisma();
-    // Restore from Blob Store so we don't create duplicate users
-    await ensureBlobRestore();
     const body = await req.json().catch(() => null);
     if (!body) {
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
@@ -93,9 +91,6 @@ export async function POST(req: NextRequest) {
         }
 
         const tokens = await createAuthTokens(user);
-
-        // Persist DB to Blob Store so user data survives cold starts
-        await syncDbToBlob();
 
         return NextResponse.json({ user: sanitizeUser(user), tokens }, { status: 201 });
       } catch (err) {
