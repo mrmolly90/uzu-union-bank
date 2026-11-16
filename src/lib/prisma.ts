@@ -10,7 +10,7 @@ import { createClient } from '@libsql/client';
 import { PrismaLibSQL } from '@prisma/adapter-libsql';
 import path from 'path';
 import fs from 'fs';
-import { put } from '@vercel/blob';
+import { put, head } from '@vercel/blob';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 const BLOB_DB_KEY = 'uzu_bank.db';
@@ -20,23 +20,25 @@ const BLOB_DB_KEY = 'uzu_bank.db';
  * Returns true if a blob was found and restored.
  */
 async function downloadFromBlob(tmpDb: string): Promise<boolean> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.BLOB_STORE_ID) return false;
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return false;
   try {
-    // Use the SDK's put URL pattern: the store ID + blob key
-    // For private stores, we need to use the SDK's internal API
-    // The simplest approach: use fetch with the token as Bearer auth
-    const baseUrl = `${process.env.BLOB_STORE_ID}.private.blob.vercel-storage.com`;
-    const url = `https://${baseUrl}/${BLOB_DB_KEY}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` },
+    // Use the SDK's head() to get the blob URL, then fetch it
+    const blob = await head(BLOB_DB_KEY, {
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+    if (!blob?.url) return false;
+    
+    const res = await fetch(blob.url, {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return false;
+    
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(tmpDb, buffer);
     console.log('[Prisma] Restored DB from Blob Store');
     return true;
-  } catch {
+  } catch (err) {
+    console.error('[Prisma] Blob download failed:', err);
     return false;
   }
 }
