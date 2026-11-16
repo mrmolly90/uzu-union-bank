@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
+import { PrismaClient } from '@prisma/client';
 import { getPrisma } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
@@ -72,15 +73,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const tx = await prisma.$transaction(async (db: any) => {
-      // Set exact balance — only admin-funded amounts appear on user account
-      const newBalance = type === 'credit'
-        ? numericAmount
-        : Math.max(0, Number(account!.balance) - numericAmount);
-
-      await db.account.update({
+    const tx = await prisma.$transaction(async (db) => {
+      const updated = await db.account.update({
         where: { id: account!.id },
-        data: { balance: newBalance },
+        data: {
+          balance: type === 'credit'
+            ? { increment: numericAmount }
+            : { decrement: Math.min(numericAmount, Number(account!.balance)) },
+        },
       });
 
       return db.transaction.create({
