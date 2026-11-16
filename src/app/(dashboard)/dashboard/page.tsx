@@ -59,17 +59,6 @@ const accountStatements: AccountStatement[] = [
   { id: '6', period: 'FY 2025', generated: 'Jan 15, 2026', type: 'annual', size: '18.2 MB', url: '#' },
 ];
 
-const sampleTransactions: TransactionRecord[] = [
-  { id: '1', sourceAccountId: '1', destinationBankSwift: 'BOFAUS3N', destinationIban: 'US12345678901234567890', sourceAmount: 3420.00, sourceCurrency: 'USD', destinationAmount: 3420.00, destinationCurrency: 'USD', exchangeRate: 1.0, status: 'SETTLED', blockchainTxHash: null, createdAt: '2026-11-08T09:30:00Z' },
-  { id: '2', sourceAccountId: '1', destinationBankSwift: 'CHASUS33', destinationIban: 'US98765432109876543210', sourceAmount: 84.99, sourceCurrency: 'USD', destinationAmount: 78.42, destinationCurrency: 'EUR', exchangeRate: 0.9222, status: 'SETTLED', blockchainTxHash: null, createdAt: '2026-11-07T14:22:00Z' },
-  { id: '3', sourceAccountId: '1', destinationBankSwift: 'UBSWCHZH80A', destinationIban: 'CH1234567890123456789', sourceAmount: 5000.00, sourceCurrency: 'USD', destinationAmount: 4403.00, destinationCurrency: 'CHF', exchangeRate: 0.8806, status: 'CLEARED', blockchainTxHash: '0x7a3f...9b2c', createdAt: '2026-11-06T11:45:00Z' },
-  { id: '4', sourceAccountId: '1', destinationBankSwift: 'BARCGB22', destinationIban: 'GB12345678901234567890', sourceAmount: 2500.00, sourceCurrency: 'USD', destinationAmount: 1980.00, destinationCurrency: 'GBP', exchangeRate: 0.7920, status: 'MULTISIG_PENDING', blockchainTxHash: '0x4d8e...1f3a', createdAt: '2026-11-05T16:30:00Z' },
-  { id: '5', sourceAccountId: '1', destinationBankSwift: 'SMBCJPJT', destinationIban: 'JP1234567890123456789', sourceAmount: 1500.00, sourceCurrency: 'USD', destinationAmount: 224910.00, destinationCurrency: 'JPY', exchangeRate: 149.94, status: 'INITIATED', blockchainTxHash: null, createdAt: '2026-11-04T08:15:00Z' },
-  { id: '6', sourceAccountId: '1', destinationBankSwift: 'SCBLUS33', destinationIban: 'US99887766554433221100', sourceAmount: 250.00, sourceCurrency: 'USD', destinationAmount: 230.55, destinationCurrency: 'GBP', exchangeRate: 0.7920, status: 'SETTLED', blockchainTxHash: '0xdef9...a1b2', createdAt: '2026-11-03T10:00:00Z' },
-  { id: '7', sourceAccountId: '1', destinationBankSwift: 'DBSSSGSG', destinationIban: 'SG1234567890123456789', sourceAmount: 1200.00, sourceCurrency: 'USD', destinationAmount: 1589.40, destinationCurrency: 'SGD', exchangeRate: 1.3245, status: 'SETTLED', blockchainTxHash: null, createdAt: '2026-11-02T15:45:00Z' },
-  { id: '8', sourceAccountId: '1', destinationBankSwift: 'CITIUS33', destinationIban: 'US44556677889900112233', sourceAmount: 3000.00, sourceCurrency: 'USD', destinationAmount: 2766.60, destinationCurrency: 'EUR', exchangeRate: 0.9222, status: 'SETTLED', blockchainTxHash: '0x3b7c...8d9e', createdAt: '2026-11-01T08:00:00Z' },
-];
-
 // ─── Sidebar Items ──────────────────────────────────────────────────────────
 
 const sidebarItems = [
@@ -828,7 +817,9 @@ export default function DashboardPage() {
               <button onClick={() => { setModalOpen('History'); setActiveSidebar('History'); }} className="text-sm text-bybit-yellow hover:underline flex items-center gap-1">View All <ChevronRight size={14} /></button>
             </div>
             <div className="space-y-1">
-              {(transactions.length > 0 ? filteredTransactions : sampleTransactions).map((tx) => (
+              {filteredTransactions.length === 0 ? (
+                <p className="py-8 text-center text-sm text-gray-500">No transactions yet.</p>
+              ) : filteredTransactions.map((tx) => (
                 <div key={tx.id} onClick={() => { setSelectedTx(tx); setModalOpen('TransactionDetail'); }}
                   className="flex items-center justify-between py-3 px-3 rounded-xl hover:bg-bybit-elevated transition-colors cursor-pointer group">
                   <div className="flex items-center gap-3">
@@ -1669,7 +1660,9 @@ export default function DashboardPage() {
             <button className="p-2.5 rounded-xl bg-bybit-elevated border border-bybit-border text-gray-400 hover:text-bybit-yellow transition-colors"><Filter size={16} /></button>
           </div>
           <div className="max-h-96 overflow-y-auto space-y-1 pr-1">
-            {(transactions.length > 0 ? transactions : sampleTransactions).map((tx) => (
+            {transactions.length === 0 ? (
+              <p className="py-8 text-center text-sm text-gray-500">No transaction receipts yet.</p>
+            ) : transactions.map((tx) => (
               <div key={tx.id} onClick={() => { setSelectedTx(tx); setModalOpen('TransactionDetail'); }}
                 className="flex items-center justify-between py-3 px-3 rounded-xl hover:bg-bybit-elevated transition-colors cursor-pointer group">
                 <div className="flex items-center gap-3">
