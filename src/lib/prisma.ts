@@ -28,10 +28,6 @@ function createPrismaClient(): PrismaClient {
     throw new Error('JWT_SECRET must be configured in production.');
   }
 
-  if (process.env.VERCEL_ENV === 'production') {
-    throw new Error('This Turso database configuration is limited to Vercel Preview.');
-  }
-
   const tursoUrl = process.env.TURSO_DATABASE_URL?.trim();
   if (tursoUrl) {
     const isLocalFile = tursoUrl.startsWith('file:');
@@ -57,10 +53,7 @@ function createPrismaClient(): PrismaClient {
     });
   }
 
-  if (process.env.VERCEL) {
-    throw new Error('TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are required on Vercel Preview.');
-  }
-
+  // Fallback to local SQLite for development
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     datasources: { db: { url: resolveLocalDatabaseUrl() } },

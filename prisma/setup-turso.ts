@@ -15,15 +15,12 @@ const requiredTables = [
 ];
 
 async function main() {
-  if (process.env.VERCEL_ENV === 'production') {
-    throw new Error('Turso schema setup is restricted to Vercel Preview.');
-  }
-
   const url = process.env.TURSO_DATABASE_URL?.trim();
   const authToken = process.env.TURSO_AUTH_TOKEN?.trim();
 
   if (!url) {
-    throw new Error('TURSO_DATABASE_URL must be configured before schema setup.');
+    console.log('TURSO_DATABASE_URL not set — skipping Turso schema setup.');
+    return;
   }
 
   const isLocalFile = url.startsWith('file:');

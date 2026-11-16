@@ -44,7 +44,7 @@ CREATE TABLE "Notification" (
 -- CreateTable
 CREATE TABLE "CryptoAddress" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "symbol" TEXT NOT NULL,
+    "symbol" TEXT NOT NULL UNIQUE,
     "name" TEXT NOT NULL,
     "network" TEXT NOT NULL,
     "address" TEXT NOT NULL,
