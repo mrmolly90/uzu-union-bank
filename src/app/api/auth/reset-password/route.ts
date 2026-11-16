@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Password required.' }, { status: 400 });
     }
 
-    const prisma = getPrisma();
+    const prisma = await getPrisma();
     const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
     
     if (!user) {

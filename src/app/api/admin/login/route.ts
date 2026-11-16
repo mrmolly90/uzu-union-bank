@@ -6,7 +6,7 @@ import { getJwtSecret } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
-    const prisma = getPrisma();
+    const prisma = await getPrisma();
     const { email, password } = await req.json();
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password required.' }, { status: 400 });

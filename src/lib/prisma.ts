@@ -1,46 +1,114 @@
 /* ==========================================================================
    UZU UNION BANK — Prisma Client
    Supports Turso (edge SQLite) on Vercel, with local SQLite fallback.
-   On Vercel, copies the build-time seeded DB to /tmp/ for writable access.
+   On Vercel, persists the SQLite DB to Vercel Blob so data survives
+   across deployments and cold starts.
    ========================================================================== */
 
 import { PrismaClient } from '@prisma/client';
 import { createClient } from '@libsql/client';
 import { PrismaLibSQL } from '@prisma/adapter-libsql';
+import { put, head } from '@vercel/blob';
 import path from 'path';
 import fs from 'fs';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
-function resolveDatabaseUrl(): string {
-  const tmpDir = '/tmp/prisma';
-  const tmpDb = path.join(tmpDir, 'uzu_bank.db');
+const BLOB_DB_KEY = 'uzu_bank.db';
+const TMP_DB_DIR = '/tmp/prisma';
+const TMP_DB_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db');
 
-  if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
+/** Ensure the /tmp/prisma directory exists. */
+function ensureTmpDir(): void {
+  if (!fs.existsSync(TMP_DB_DIR)) {
+    fs.mkdirSync(TMP_DB_DIR, { recursive: true });
+  }
+}
+
+/**
+ * On Vercel, try to restore the DB from Blob storage first.
+ * If Blob is empty or unavailable, fall back to the build-time seed DB.
+ */
+async function restoreFromBlob(): Promise<void> {
+  ensureTmpDir();
+
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!blobToken) {
+    // No Blob configured — use build-time seed
+    copyBuildDbToTmp();
+    return;
   }
 
-  // On Vercel, copy the build-time DB to /tmp/ for writable access
-  if (process.env.VERCEL) {
-    const possiblePaths = [
-      path.join(process.cwd(), 'prisma', 'uzu_bank.db'),
-      path.join(process.cwd(), 'uzu_bank.db'),
-    ];
-
-    let copied = false;
-    for (const buildDb of possiblePaths) {
-      if (fs.existsSync(buildDb)) {
-        fs.copyFileSync(buildDb, tmpDb);
-        copied = true;
-        break;
+  try {
+    const blobHead = await head(BLOB_DB_KEY, { token: blobToken });
+    if (blobHead) {
+      // Download the persisted DB from Blob
+      const response = await fetch(blobHead.url);
+      if (response.ok) {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(TMP_DB_PATH, buffer);
+        return;
       }
     }
+  } catch {
+    // Blob unavailable — fall back to build-time seed
+  }
 
-    if (!copied && !fs.existsSync(tmpDb)) {
-      fs.writeFileSync(tmpDb, '');
+  copyBuildDbToTmp();
+}
+
+/** Copy the build-time seeded DB to /tmp/ as a fallback. */
+function copyBuildDbToTmp(): void {
+  ensureTmpDir();
+
+  if (fs.existsSync(TMP_DB_PATH)) return; // already exists
+
+  const possiblePaths = [
+    path.join(process.cwd(), 'prisma', 'uzu_bank.db'),
+    path.join(process.cwd(), 'uzu_bank.db'),
+  ];
+
+  for (const buildDb of possiblePaths) {
+    if (fs.existsSync(buildDb)) {
+      fs.copyFileSync(buildDb, TMP_DB_PATH);
+      return;
     }
+  }
 
-    return `file:${tmpDb}`;
+  // No seed DB found — create empty
+  if (!fs.existsSync(TMP_DB_PATH)) {
+    fs.writeFileSync(TMP_DB_PATH, '');
+  }
+}
+
+/**
+ * Persist the current /tmp/ DB back to Vercel Blob.
+ * Call this after every write operation (register, fund, transfer, etc.).
+ */
+export async function syncDbToBlob(): Promise<void> {
+  if (!process.env.VERCEL) return;
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!blobToken) return;
+  if (!fs.existsSync(TMP_DB_PATH)) return;
+
+  try {
+    const buffer = fs.readFileSync(TMP_DB_PATH);
+    await put(BLOB_DB_KEY, buffer, {
+      token: blobToken,
+      access: 'public',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+  } catch (err) {
+    console.error('[Prisma] Failed to sync DB to Blob:', err);
+  }
+}
+
+function resolveDatabaseUrl(): string {
+  ensureTmpDir();
+
+  if (process.env.VERCEL) {
+    return `file:${TMP_DB_PATH}`;
   }
 
   // Local development
@@ -91,8 +159,17 @@ function createPrismaClient(): PrismaClient {
   });
 }
 
-export function getPrisma(): PrismaClient {
+/**
+ * Get the Prisma client singleton.
+ * On Vercel, this also restores the DB from Blob on first call.
+ */
+export async function getPrisma(): Promise<PrismaClient> {
   if (globalForPrisma.prisma) return globalForPrisma.prisma;
+
+  // On Vercel, restore persisted DB from Blob before creating client
+  if (process.env.VERCEL) {
+    await restoreFromBlob();
+  }
 
   const client = createPrismaClient();
   globalForPrisma.prisma = client;

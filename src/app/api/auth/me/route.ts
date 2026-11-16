@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token.' }, { status: 401 });
     }
 
-    const prisma = getPrisma();
+    const prisma = await getPrisma();
     const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
 
     if (!user) {

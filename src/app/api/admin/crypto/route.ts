@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
   const addresses = await prisma.cryptoAddress.findMany({
     orderBy: { symbol: 'asc' },
   });
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const prisma = getPrisma();
+    const prisma = await getPrisma();
     const { symbol, name, network, address, minDeposit } = await req.json();
 
     if (!symbol || !name || !network || !address) {
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const prisma = getPrisma();
+    const prisma = await getPrisma();
     const { id, symbol, name, network, address, minDeposit, isActive } = await req.json();
 
     if (!id) {

@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const prisma = getPrisma();
+  const prisma = await getPrisma();
   const users = await prisma.user.findMany({
     include: { accounts: true, notifications: { orderBy: { createdAt: 'desc' }, take: 5 } },
     orderBy: { createdAt: 'desc' },
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const prisma = getPrisma();
+    const prisma = await getPrisma();
     const body = await req.json();
     const { userId, accountType, amount } = body;
 

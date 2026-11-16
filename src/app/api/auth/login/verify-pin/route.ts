@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session expired. Please sign in again.' }, { status: 401 });
     }
 
-    const prisma = getPrisma();
+    const prisma = await getPrisma();
     const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
 
     if (!user || !user.bankPinHash) {

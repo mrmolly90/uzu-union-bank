@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const prisma = getPrisma();
+    const prisma = await getPrisma();
     const addresses = await prisma.cryptoAddress.findMany({
       where: { isActive: true },
       orderBy: { symbol: 'asc' },
