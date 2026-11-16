@@ -21,16 +21,26 @@ export async function POST(req: NextRequest) {
     const normalizedEmail = email.trim().toLowerCase();
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
-    if (
-      !user ||
-      !(await verifyPassword(password, user.passwordHash)) ||
-      !user.bankPinHash ||
-      !(await verifyPassword(bankPin, user.bankPinHash))
-    ) {
-      return NextResponse.json(
-        { error: 'Invalid credentials.' },
-        { status: 401 }
-      );
+    if (!user) {
+      console.error('[Login] User not found:', normalizedEmail);
+      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+    }
+
+    const passwordValid = await verifyPassword(password, user.passwordHash);
+    if (!passwordValid) {
+      console.error('[Login] Password mismatch for:', normalizedEmail);
+      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+    }
+
+    if (!user.bankPinHash) {
+      console.error('[Login] No bankPinHash for:', normalizedEmail);
+      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+    }
+
+    const pinValid = await verifyPassword(bankPin, user.bankPinHash);
+    if (!pinValid) {
+      console.error('[Login] PIN mismatch for:', normalizedEmail);
+      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
     }
 
     const tokens = await createAuthTokens(user);
