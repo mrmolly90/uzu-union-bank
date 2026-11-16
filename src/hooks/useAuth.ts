@@ -12,12 +12,13 @@ async function fetchApi<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const { tokens } = useAuthStore.getState();
+  const isPublicAuthRoute = path === '/auth/register';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
 
-  if (tokens?.accessToken) {
+  if (!isPublicAuthRoute && tokens?.accessToken) {
     headers['Authorization'] = `Bearer ${tokens.accessToken}`;
   }
 
@@ -27,9 +28,7 @@ async function fetchApi<T>(
   });
 
   if (res.status === 401) {
-    // Login, PIN verification, and registration are public routes; do not
-    // attempt an unrelated refresh when they reject submitted credentials.
-    const isPublicAuthRoute = path === '/auth/register';
+    // Registration is public; do not refresh or clear an unrelated session.
     if (!isPublicAuthRoute && tokens?.refreshToken) {
       const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
@@ -85,9 +84,10 @@ export function useApi() {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    clearAuth();
     toast('success', 'Account created successfully!');
     router.push('/login?registered=1');
-  }, [router]);
+  }, [clearAuth, router]);
 
   const logout = useCallback(() => {
     clearAuth();
