@@ -65,9 +65,9 @@ npm install
 cp .env.example .env
 # Edit .env with your values
 
-# Generate Prisma client & push schema
-npx prisma generate
-npx prisma db push
+# Generate Prisma client & push the local SQLite schema
+npm run db:generate:dev
+npm run db:push:dev
 
 # Seed demo data (optional)
 npm run db:seed
@@ -84,9 +84,17 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Vercel (Recommended)
 
+Preview deployments use Turso Cloud (libSQL) rather than a SQLite file on
+Vercel's ephemeral filesystem. Configure the Turso integration for the Preview
+environment and a separate strong `JWT_SECRET`. The integration provides
+`TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. The Vercel build initializes the
+schema only when the remote database is empty; it never copies local records.
+
+This setup is Preview-only. Do not deploy it to Production until Production
+storage and any required data migration have been reviewed separately.
+
 ```bash
-npm i -g vercel
-vercel --prod
+vercel
 ```
 
 ### Manual Deployment
