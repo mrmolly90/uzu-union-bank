@@ -32,9 +32,14 @@ function ensureTmpDir(): void {
 async function restoreFromBlob(): Promise<void> {
   ensureTmpDir();
 
+  // If /tmp/ DB already has data, keep it — don't overwrite from Blob
+  if (fs.existsSync(TMP_DB_PATH)) {
+    const stats = fs.statSync(TMP_DB_PATH);
+    if (stats.size > 4096) return;
+  }
+
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   if (!blobToken) {
-    // No Blob configured — use build-time seed
     copyBuildDbToTmp();
     return;
   }
@@ -42,16 +47,17 @@ async function restoreFromBlob(): Promise<void> {
   try {
     const blobHead = await head(BLOB_DB_KEY, { token: blobToken });
     if (blobHead) {
-      // Download the persisted DB from Blob
       const response = await fetch(blobHead.url);
       if (response.ok) {
         const buffer = Buffer.from(await response.arrayBuffer());
-        fs.writeFileSync(TMP_DB_PATH, buffer);
-        return;
+        if (buffer.length > 4096) {
+          fs.writeFileSync(TMP_DB_PATH, buffer);
+          return;
+        }
       }
     }
-  } catch {
-    // Blob unavailable — fall back to build-time seed
+  } catch (err) {
+    console.error('[Prisma] Blob restore failed:', err);
   }
 
   copyBuildDbToTmp();
@@ -61,7 +67,11 @@ async function restoreFromBlob(): Promise<void> {
 function copyBuildDbToTmp(): void {
   ensureTmpDir();
 
-  if (fs.existsSync(TMP_DB_PATH)) return; // already exists
+  // If /tmp/ DB already exists AND has data (not empty), keep it — don't overwrite
+  if (fs.existsSync(TMP_DB_PATH)) {
+    const stats = fs.statSync(TMP_DB_PATH);
+    if (stats.size > 4096) return; // non-empty DB, keep existing data
+  }
 
   const possiblePaths = [
     path.join(process.cwd(), 'prisma', 'uzu_bank.db'),
