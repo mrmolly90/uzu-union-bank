@@ -126,6 +126,7 @@ export async function syncDbToBlob(): Promise<void> {
         'x-store-id': storeId,
         'Content-Type': 'application/octet-stream',
         'x-add-random-suffix': 'false',
+        'x-access': 'private',
       },
       body: buffer,
     });
