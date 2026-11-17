@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -71,6 +71,9 @@ export async function POST(req: NextRequest) {
         initiatedById: userId,
       },
     });
+
+    // Persist DB to Blob
+    await syncDbToBlob();
 
     return NextResponse.json({ success: true, account: updated });
   } catch (err) {
