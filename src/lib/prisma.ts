@@ -82,6 +82,7 @@ function copyBuildDbToTmp(): void {
 
   const possiblePaths = [
     path.join(process.cwd(), 'prisma', 'uzu_bank.db'),
+    path.join(process.cwd(), 'prisma', 'dev.db'),
     path.join(process.cwd(), 'uzu_bank.db'),
   ];
 
