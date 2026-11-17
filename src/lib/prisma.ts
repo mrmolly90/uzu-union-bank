@@ -8,7 +8,6 @@
 import { PrismaClient } from '@prisma/client';
 import { createClient } from '@libsql/client';
 import { PrismaLibSQL } from '@prisma/adapter-libsql';
-import { put, head } from '@vercel/blob';
 import path from 'path';
 import fs from 'fs';
 
@@ -47,23 +46,23 @@ async function restoreFromBlob(): Promise<void> {
   }
 
   try {
-    const blobHead = await head(BLOB_DB_KEY, {
-      token: blobToken,
-      storeId: storeId,
+    // Use Vercel Blob REST API directly
+    const apiUrl = `https://blob.vercel-storage.com/${BLOB_DB_KEY}`;
+    const response = await fetch(apiUrl, {
+      headers: {
+        Authorization: `Bearer ${blobToken}`,
+        'x-store-id': storeId,
+      },
     });
-    const downloadUrl = blobHead?.downloadUrl || blobHead?.url;
-    if (downloadUrl) {
-      const response = await fetch(downloadUrl);
-      if (response.ok) {
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (buffer.length > 4096) {
-          console.log('[Prisma] Restored DB from Blob (' + buffer.length + ' bytes)');
-          fs.writeFileSync(TMP_DB_PATH, buffer);
-          return;
-        }
+    if (response.ok) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length > 4096) {
+        console.log('[Prisma] Restored DB from Blob (' + buffer.length + ' bytes)');
+        fs.writeFileSync(TMP_DB_PATH, buffer);
+        return;
       }
     }
-    console.log('[Prisma] Blob empty or not found, using seed DB');
+    console.log('[Prisma] Blob empty or not found (' + response.status + '), using seed DB');
   } catch (err) {
     console.error('[Prisma] Blob restore failed:', err instanceof Error ? err.message : String(err));
   }
@@ -117,13 +116,26 @@ export async function syncDbToBlob(): Promise<void> {
       return;
     }
     const buffer = fs.readFileSync(TMP_DB_PATH);
-    await put(BLOB_DB_KEY, buffer, {
-      token: blobToken,
-      storeId: storeId,
-      access: 'private',
-      addRandomSuffix: false,
-      allowOverwrite: true,
+
+    // Use Vercel Blob REST API directly
+    const apiUrl = `https://blob.vercel-storage.com/${BLOB_DB_KEY}`;
+    const response = await fetch(apiUrl, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${blobToken}`,
+        'x-store-id': storeId,
+        'Content-Type': 'application/octet-stream',
+        'x-add-random-suffix': 'false',
+      },
+      body: buffer,
     });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'unknown');
+      console.error('[Prisma] Failed to sync DB to Blob: HTTP ' + response.status + ' ' + errorText);
+      return;
+    }
+
     console.log('[Prisma] Synced DB to Blob (' + buffer.length + ' bytes)');
   } catch (err) {
     console.error('[Prisma] Failed to sync DB to Blob:', err instanceof Error ? err.message : String(err));
