@@ -51,8 +51,9 @@ async function restoreFromBlob(): Promise<void> {
       token: blobToken,
       storeId: storeId,
     });
-    if (blobHead && blobHead.url) {
-      const response = await fetch(blobHead.url);
+    const downloadUrl = blobHead?.downloadUrl || blobHead?.url;
+    if (downloadUrl) {
+      const response = await fetch(downloadUrl);
       if (response.ok) {
         const buffer = Buffer.from(await response.arrayBuffer());
         if (buffer.length > 4096) {
