@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
 import { getPrisma, syncDbToBlob } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
