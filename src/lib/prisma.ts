@@ -119,7 +119,7 @@ export async function syncDbToBlob(): Promise<void> {
     await put(BLOB_DB_KEY, buffer, {
       token: blobToken,
       storeId: storeId,
-      access: 'public',
+      access: 'private',
       addRandomSuffix: false,
       allowOverwrite: true,
     });
