@@ -39,25 +39,32 @@ async function restoreFromBlob(): Promise<void> {
   }
 
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!blobToken) {
+  const storeId = process.env.BLOB_STORE_ID;
+  if (!blobToken || !storeId) {
+    console.error('[Prisma] Blob not configured (missing token or store ID)');
     copyBuildDbToTmp();
     return;
   }
 
   try {
-    const blobHead = await head(BLOB_DB_KEY, { token: blobToken });
-    if (blobHead) {
+    const blobHead = await head(BLOB_DB_KEY, {
+      token: blobToken,
+      storeId: storeId,
+    });
+    if (blobHead && blobHead.url) {
       const response = await fetch(blobHead.url);
       if (response.ok) {
         const buffer = Buffer.from(await response.arrayBuffer());
         if (buffer.length > 4096) {
+          console.log('[Prisma] Restored DB from Blob (' + buffer.length + ' bytes)');
           fs.writeFileSync(TMP_DB_PATH, buffer);
           return;
         }
       }
     }
+    console.log('[Prisma] Blob empty or not found, using seed DB');
   } catch (err) {
-    console.error('[Prisma] Blob restore failed:', err);
+    console.error('[Prisma] Blob restore failed:', err instanceof Error ? err.message : String(err));
   }
 
   copyBuildDbToTmp();
@@ -102,15 +109,22 @@ export async function syncDbToBlob(): Promise<void> {
   if (!fs.existsSync(TMP_DB_PATH)) return;
 
   try {
+    const storeId = process.env.BLOB_STORE_ID;
+    if (!storeId) {
+      console.error('[Prisma] BLOB_STORE_ID not set, cannot sync');
+      return;
+    }
     const buffer = fs.readFileSync(TMP_DB_PATH);
     await put(BLOB_DB_KEY, buffer, {
       token: blobToken,
+      storeId: storeId,
       access: 'public',
       addRandomSuffix: false,
       allowOverwrite: true,
     });
+    console.log('[Prisma] Synced DB to Blob (' + buffer.length + ' bytes)');
   } catch (err) {
-    console.error('[Prisma] Failed to sync DB to Blob:', err);
+    console.error('[Prisma] Failed to sync DB to Blob:', err instanceof Error ? err.message : String(err));
   }
 }
 
