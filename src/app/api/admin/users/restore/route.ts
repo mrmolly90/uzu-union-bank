@@ -4,6 +4,7 @@ import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getJwtSecret } from '@/lib/auth';
+import { getCurrencyByCountryCode } from '@/lib/countries';
 
 function verifyAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization');
@@ -15,115 +16,43 @@ function verifyAdmin(req: NextRequest) {
   } catch { return null; }
 }
 
+/** Build country-appropriate accounts — user's home currency + major currencies. */
+function buildCountryAccounts(countryCode: string, fundAmount: number) {
+  const homeCurrency = getCurrencyByCountryCode(countryCode);
+  const currencies = Array.from(new Set([homeCurrency, 'USD', 'EUR', 'GBP']));
+  const accounts: Array<{ currency: string; accountType: string; balance: number; accountNumber: string }> = [];
+  for (const type of ['CHECKING', 'SAVINGS']) {
+    for (const currency of currencies) {
+      const bal = currency === homeCurrency && type === 'CHECKING' ? fundAmount
+                : currency === homeCurrency && type === 'SAVINGS' ? Math.round(fundAmount * 0.5)
+                : currency === 'USD' && type === 'CHECKING' ? Math.round(fundAmount * 0.3)
+                : 0;
+      accounts.push({
+        currency,
+        accountType: type,
+        balance: bal > 0 ? bal : 0,
+        accountNumber: generate16DigitAccountNumber(),
+      });
+    }
+  }
+  return accounts;
+}
+
+/** Users to restore — including previously lost real Gmail accounts. */
 const RESTORE_USERS = [
-  {
-    email: 'alice@example.com',
-    password: 'Alice@2026',
-    pin: '1234',
-    fullName: 'Alice Johnson',
-    countryCode: 'US',
-    accounts: [
-      { currency: 'USD', type: 'CHECKING', balance: 15000 },
-      { currency: 'USD', type: 'SAVINGS', balance: 45000 },
-      { currency: 'EUR', type: 'CHECKING', balance: 5000 },
-      { currency: 'EUR', type: 'SAVINGS', balance: 10000 },
-      { currency: 'GBP', type: 'CHECKING', balance: 3000 },
-    ],
-  },
-  {
-    email: 'bob@example.com',
-    password: 'Bob@2026',
-    pin: '5678',
-    fullName: 'Bob Williams',
-    countryCode: 'GB',
-    accounts: [
-      { currency: 'GBP', type: 'CHECKING', balance: 12000 },
-      { currency: 'GBP', type: 'SAVINGS', balance: 35000 },
-      { currency: 'USD', type: 'CHECKING', balance: 8000 },
-      { currency: 'EUR', type: 'CHECKING', balance: 4000 },
-    ],
-  },
-  {
-    email: 'carol@example.com',
-    password: 'Carol@2026',
-    pin: '9012',
-    fullName: 'Carol Schmidt',
-    countryCode: 'DE',
-    accounts: [
-      { currency: 'EUR', type: 'CHECKING', balance: 20000 },
-      { currency: 'EUR', type: 'SAVINGS', balance: 60000 },
-      { currency: 'USD', type: 'CHECKING', balance: 5000 },
-      { currency: 'GBP', type: 'CHECKING', balance: 2000 },
-    ],
-  },
-  {
-    email: 'david@example.com',
-    password: 'David@2026',
-    pin: '3456',
-    fullName: 'David Kim',
-    countryCode: 'KR',
-    accounts: [
-      { currency: 'USD', type: 'CHECKING', balance: 25000 },
-      { currency: 'USD', type: 'SAVINGS', balance: 55000 },
-      { currency: 'EUR', type: 'CHECKING', balance: 7000 },
-      { currency: 'KRW', type: 'CHECKING', balance: 50000000 },
-    ],
-  },
-  {
-    email: 'emma@example.com',
-    password: 'Emma@2026',
-    pin: '7890',
-    fullName: 'Emma Okafor',
-    countryCode: 'NG',
-    accounts: [
-      { currency: 'USD', type: 'CHECKING', balance: 8000 },
-      { currency: 'USD', type: 'SAVINGS', balance: 20000 },
-      { currency: 'NGN', type: 'CHECKING', balance: 5000000 },
-      { currency: 'NGN', type: 'SAVINGS', balance: 15000000 },
-      { currency: 'EUR', type: 'CHECKING', balance: 2000 },
-    ],
-  },
-  {
-    email: 'frank@example.com',
-    password: 'Frank@2026',
-    pin: '2345',
-    fullName: 'Frank Chen',
-    countryCode: 'SG',
-    accounts: [
-      { currency: 'USD', type: 'CHECKING', balance: 35000 },
-      { currency: 'USD', type: 'SAVINGS', balance: 85000 },
-      { currency: 'SGD', type: 'CHECKING', balance: 50000 },
-      { currency: 'SGD', type: 'SAVINGS', balance: 120000 },
-      { currency: 'EUR', type: 'CHECKING', balance: 10000 },
-    ],
-  },
-  {
-    email: 'grace@example.com',
-    password: 'Grace@2026',
-    pin: '6789',
-    fullName: 'Grace Patel',
-    countryCode: 'IN',
-    accounts: [
-      { currency: 'USD', type: 'CHECKING', balance: 10000 },
-      { currency: 'USD', type: 'SAVINGS', balance: 30000 },
-      { currency: 'INR', type: 'CHECKING', balance: 500000 },
-      { currency: 'INR', type: 'SAVINGS', balance: 1500000 },
-    ],
-  },
-  {
-    email: 'henry@example.com',
-    password: 'Henry@2026',
-    pin: '0123',
-    fullName: 'Henry Silva',
-    countryCode: 'BR',
-    accounts: [
-      { currency: 'USD', type: 'CHECKING', balance: 12000 },
-      { currency: 'USD', type: 'SAVINGS', balance: 40000 },
-      { currency: 'BRL', type: 'CHECKING', balance: 75000 },
-      { currency: 'BRL', type: 'SAVINGS', balance: 200000 },
-      { currency: 'EUR', type: 'CHECKING', balance: 3000 },
-    ],
-  },
+  { email: 'tomcharania@gmail.com', password: 'Tom@2026', pin: '1234', fullName: 'Tom Charania', countryCode: 'US', fundAmount: 75000 },
+  { email: 'entertainment@gmail.com', password: 'Enter@2026', pin: '5678', fullName: 'Entertainment Pro', countryCode: 'US', fundAmount: 50000 },
+  { email: 'willkev913@gmail.com', password: 'Will@2026', pin: '1111', fullName: 'Kevin William', countryCode: 'GB', fundAmount: 25000 },
+  { email: 'willingkevin9@gmail.com', password: 'Wolf@2026', pin: '2222', fullName: 'Wolf Germ', countryCode: 'DE', fundAmount: 20000 },
+  { email: 'bwallet828@gmail.com', password: 'Hen@2026', pin: '3333', fullName: 'Hen xxx', countryCode: 'JP', fundAmount: 30000 },
+  { email: 'alice@example.com', password: 'Alice@2026', pin: '1234', fullName: 'Alice Johnson', countryCode: 'US', fundAmount: 25000 },
+  { email: 'bob@example.com', password: 'Bob@2026', pin: '5678', fullName: 'Bob Williams', countryCode: 'GB', fundAmount: 30000 },
+  { email: 'carol@example.com', password: 'Carol@2026', pin: '9012', fullName: 'Carol Schmidt', countryCode: 'DE', fundAmount: 40000 },
+  { email: 'david@example.com', password: 'David@2026', pin: '3456', fullName: 'David Kim', countryCode: 'KR', fundAmount: 60000 },
+  { email: 'emma@example.com', password: 'Emma@2026', pin: '7890', fullName: 'Emma Okafor', countryCode: 'NG', fundAmount: 45000 },
+  { email: 'frank@example.com', password: 'Frank@2026', pin: '2345', fullName: 'Frank Chen', countryCode: 'SG', fundAmount: 80000 },
+  { email: 'grace@example.com', password: 'Grace@2026', pin: '6789', fullName: 'Grace Patel', countryCode: 'IN', fundAmount: 35000 },
+  { email: 'henry@example.com', password: 'Henry@2026', pin: '0123', fullName: 'Henry Silva', countryCode: 'BR', fundAmount: 50000 },
 ];
 
 export async function POST(req: NextRequest) {
@@ -146,6 +75,7 @@ export async function POST(req: NextRequest) {
 
       const passwordHash = await hashPassword(demo.password);
       const bankPinHash = await hashPassword(demo.pin);
+      const accounts = buildCountryAccounts(demo.countryCode, demo.fundAmount);
 
       const user = await prisma.user.create({
         data: {
@@ -155,38 +85,30 @@ export async function POST(req: NextRequest) {
           fullName: demo.fullName,
           countryCode: demo.countryCode,
           kycStatus: 'VERIFIED',
-          accounts: {
-            create: demo.accounts.map((acct) => ({
-              currency: acct.currency,
-              accountType: acct.type,
-              balance: acct.balance,
-              accountNumber: generate16DigitAccountNumber(),
-            })),
-          },
+          accounts: { create: accounts },
         },
         include: { accounts: true },
       });
 
-      // Welcome notification
       await prisma.notification.create({
         data: {
           userId: user.id,
           title: 'Account Restored',
-          message: `Welcome back, ${demo.fullName}! Your accounts have been restored.`,
+          message: `Welcome back, ${demo.fullName}! Your accounts have been restored with pre-funded balances.`,
           type: 'INFO',
         },
       });
 
       const totalBalance = user.accounts.reduce((s, a) => s + Number(a.balance), 0);
       created++;
-      results.push({
-        email: demo.email,
-        status: 'created',
-        fullName: demo.fullName,
-        accounts: demo.accounts.length,
-        totalBalance,
-      });
+      results.push({ email: demo.email, status: 'created', fullName: demo.fullName, country: demo.countryCode, accounts: user.accounts.length, totalBalance });
     }
+
+    // Auto-approve KYC for ALL existing PENDING users so they can use the system
+    const autoApproved = await prisma.user.updateMany({
+      where: { kycStatus: 'PENDING' },
+      data: { kycStatus: 'VERIFIED' },
+    });
 
     // Persist to Blob
     try {
@@ -196,12 +118,7 @@ export async function POST(req: NextRequest) {
       console.error('[Admin Restore Users] Blob sync failed:', syncErr);
     }
 
-    return NextResponse.json({
-      success: true,
-      created,
-      skipped,
-      results,
-    });
+    return NextResponse.json({ success: true, created, skipped, kycApproved: autoApproved.count, results });
   } catch (err) {
     console.error('[Admin Restore Users]', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
@@ -211,13 +128,5 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  return NextResponse.json({
-    availableUsers: RESTORE_USERS.map((u) => ({
-      email: u.email,
-      fullName: u.fullName,
-      countryCode: u.countryCode,
-    })),
-    totalTemplates: RESTORE_USERS.length,
-  });
+  return NextResponse.json({ availableUsers: RESTORE_USERS.map(u => ({ email: u.email, fullName: u.fullName, countryCode: u.countryCode, fundAmount: u.fundAmount })), totalTemplates: RESTORE_USERS.length });
 }
