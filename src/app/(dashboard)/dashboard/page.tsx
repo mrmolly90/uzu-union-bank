@@ -197,16 +197,22 @@ export default function DashboardPage() {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
+  // User's home currency from their country code
+  const homeCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
+
   const checkingAccounts = accounts.filter(a => a.accountType === 'CHECKING' || a.accountNumber?.includes('CHK'));
   const savingsAccounts = accounts.filter(a => a.accountType === 'SAVINGS' || a.accountNumber?.includes('SAV'));
 
-  // Convert all balances to the active currency for unified display
-  const totalChecking = checkingAccounts.reduce((s, a) => s + convertCurrency(Number(a.balance), a.currency, activeAccount), 0);
-  const totalSavings = savingsAccounts.reduce((s, a) => s + convertCurrency(Number(a.balance), a.currency, activeAccount), 0);
-  const totalBalance = accounts.reduce((s, a) => s + convertCurrency(Number(a.balance), a.currency, activeAccount), 0);
+  // Show each account in its own currency — no forced conversion to activeAccount.
+  // The user sees their EUR balance in EUR, USD balance in USD, etc.
+  // Total is shown in the user's HOME currency for a quick overview.
+  const totalChecking = checkingAccounts.reduce((s, a) => s + convertCurrency(Number(a.balance), a.currency, homeCurrency), 0);
+  const totalSavings = savingsAccounts.reduce((s, a) => s + convertCurrency(Number(a.balance), a.currency, homeCurrency), 0);
+  const totalBalance = accounts.reduce((s, a) => s + convertCurrency(Number(a.balance), a.currency, homeCurrency), 0);
 
-  const primaryChecking = checkingAccounts.find(a => a.currency === activeAccount) || checkingAccounts[0];
-  const primarySavings = savingsAccounts.find(a => a.currency === activeAccount) || savingsAccounts[0];
+  // Primary accounts are always the user's HOME currency accounts
+  const primaryChecking = checkingAccounts.find(a => a.currency === homeCurrency) || checkingAccounts[0];
+  const primarySavings = savingsAccounts.find(a => a.currency === homeCurrency) || savingsAccounts[0];
 
   const filteredTransactions = showAllTransactions ? transactions : transactions.slice(0, 6);
 
@@ -229,11 +235,9 @@ export default function DashboardPage() {
       return `${getCurrencySymbol(currency)}${amount.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 2 })}`;
     }
   };
-  const formatConverted = (amount: number, fromCurrency: string) => formatConvertedAmount(amount, fromCurrency, activeAccount);
+  const formatConverted = (amount: number, fromCurrency: string) => formatConvertedAmount(amount, fromCurrency, homeCurrency);
 
   // IBAN boxes show exactly 16 digits for BOTH checking and savings.
-  // The old local version split on '-' and returned only 13 digits for legacy
-  // UZU-CHK-10000001 rows; src/lib/format.ts strips non-digits then takes 16.
   const maskAccount = (num: string) => ibanShort(num);
   const formatIbanDisplay = (num: string) => ibanFull(num);
   const formatIbanShort = (num: string) => ibanShort(num);
