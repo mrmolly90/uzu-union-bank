@@ -4,6 +4,23 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shield, Users, Wallet, ArrowUpRight, ArrowDownLeft, Bell, LogOut, Search, X, Check, AlertTriangle, DollarSign, RefreshCw, Send, Clock, FileText, BarChart3, Activity, UserCheck, TrendingUp, Globe, Building2, Ban, ToggleLeft, ToggleRight, RotateCcw, Bitcoin, Copy, ExternalLink, Edit3, Plus, Trash2, Loader2 } from 'lucide-react';
 
+// Simple country→currency lookup for admin panel
+const COUNTRY_CURRENCY: Record<string, string> = {
+  US: 'USD', GB: 'GBP', DE: 'EUR', FR: 'EUR', IT: 'EUR', ES: 'EUR',
+  JP: 'JPY', CH: 'CHF', SG: 'SGD', AE: 'AED', NG: 'NGN', ZA: 'ZAR',
+  KR: 'KRW', IN: 'INR', BR: 'BRL', CN: 'CNY', CA: 'CAD', AU: 'AUD',
+  MX: 'MXN', RU: 'RUB', TR: 'TRY', AR: 'ARS', EG: 'EGP', KE: 'KES',
+  GH: 'GHS', MA: 'MAD', TN: 'TND', DZ: 'DZD', PK: 'PKR', BD: 'BDT',
+  LK: 'LKR', NP: 'NPR', AF: 'AFN', IQ: 'IQD', SA: 'SAR', QA: 'QAR',
+  KW: 'KWD', OM: 'OMR', BH: 'BHD', JO: 'JOD', LB: 'LBP', IL: 'ILS',
+  HK: 'HKD', TW: 'TWD', TH: 'THB', VN: 'VND', ID: 'IDR', MY: 'MYR',
+  PH: 'PHP', NZ: 'NZD', NO: 'NOK', SE: 'SEK', DK: 'DKK', PL: 'PLN',
+  CZ: 'CZK', HU: 'HUF', RO: 'RON', BG: 'BGN', HR: 'HRK', IS: 'ISK',
+  UA: 'UAH', ET: 'ETB', TZ: 'TZS', UG: 'UGX', ZM: 'ZMW', AO: 'AOA',
+  VE: 'VES', UY: 'UYU', PE: 'PEN', CO: 'COP', CL: 'CLP',
+};
+function getCurrencyByCountryCode(code: string): string { return COUNTRY_CURRENCY[code] || 'USD'; }
+
 interface AdminUser {
   id: string;
   email: string;
@@ -64,6 +81,9 @@ export default function AdminPanelPage() {
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [restoreResult, setRestoreResult] = useState<string>('');
   const [restoreError, setRestoreError] = useState<string>('');
+  // Cleanup State
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<string>('');
 
   const CRYPTO_PRESETS = [
     { symbol: 'BTC', name: 'Bitcoin', network: 'Bitcoin', minDeposit: '0.001 BTC' },
@@ -154,12 +174,32 @@ export default function AdminPanelPage() {
       });
       if (!res.ok) throw new Error('Restore failed');
       const data = await res.json();
-      setRestoreResult(`Created ${data.created} users (${data.skipped} skipped)`);
+      setRestoreResult(`Created ${data.created} users (${data.skipped} skipped, ${data.kycApproved || 0} KYC approved)`);
       fetchUsers(token);
     } catch (err: any) {
       setRestoreError(err.message || 'Restore failed');
     } finally {
       setRestoreLoading(false);
+    }
+  };
+
+  const handleCleanupTestUsers = async () => {
+    if (!token) return;
+    setCleanupLoading(true);
+    setCleanupResult('');
+    try {
+      const res = await fetch('/api/admin/users/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Cleanup failed');
+      const data = await res.json();
+      setCleanupResult(`Removed ${data.deleted} test users`);
+      fetchUsers(token);
+    } catch (err: any) {
+      setCleanupResult('Error: ' + (err.message || 'Cleanup failed'));
+    } finally {
+      setCleanupLoading(false);
     }
   };
 
@@ -349,18 +389,25 @@ export default function AdminPanelPage() {
           </div>
         </div>
 
-        {/* Restore Users Button */}
+        {/* Cleanup Test Users Button */}
         <div className="flex items-center justify-between bg-slate-800/60 rounded-xl border border-slate-700/50 p-3">
           <div className="flex items-center gap-2 text-sm text-slate-300">
             <UserCheck size={16} className="text-amber-400" />
-            <span>Missing users? Restore demo accounts with balances.</span>
+            <span>Remove test/demo users to show only real accounts.</span>
           </div>
-          <button onClick={handleRestoreUsers} disabled={restoreLoading}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-900 font-bold text-xs hover:brightness-110 transition-all disabled:opacity-50">
-            {restoreLoading ? <><Loader2 size={14} className="animate-spin" /> Restoring…</> : <><Plus size={14} /> Restore Users</>}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleRestoreUsers} disabled={restoreLoading}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 font-bold text-xs hover:brightness-110 transition-all disabled:opacity-50">
+              {restoreLoading ? <><Loader2 size={14} className="animate-spin" /> Restoring…</> : <>Restore Users</>}
+            </button>
+            <button onClick={handleCleanupTestUsers} disabled={cleanupLoading}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 font-bold text-xs hover:bg-red-500/20 transition-all disabled:opacity-50">
+              {cleanupLoading ? <><Loader2 size={14} className="animate-spin" /> Cleaning…</> : <><X size={14} /> Cleanup Tests</>}
+            </button>
+          </div>
           {restoreResult && <span className="text-emerald-400 text-xs ml-2">{restoreResult}</span>}
           {restoreError && <span className="text-red-400 text-xs ml-2">{restoreError}</span>}
+          {cleanupResult && <span className="text-amber-400 text-xs ml-2">{cleanupResult}</span>}
         </div>
 
         {/* Tabs */}
@@ -492,7 +539,7 @@ export default function AdminPanelPage() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-xs text-slate-400">Select User</label>
-                  <select value={txForm.userId} onChange={e => { const u = users.find(u => u.id === e.target.value); setSelectedUser(u || null); setTxForm({ ...txForm, userId: e.target.value }); }}
+                  <select value={txForm.userId} onChange={e => { const u = users.find(u => u.id === e.target.value); setSelectedUser(u || null); setTxForm({ ...txForm, userId: e.target.value, currency: u ? getCurrencyByCountryCode(u.countryCode) : 'USD' }); }}
                     className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-600 text-white text-sm focus:border-amber-500 outline-none">
                     <option value="">Select a user...</option>
                     {users.map(u => <option key={u.id} value={u.id}>{u.fullName} ({u.email})</option>)}

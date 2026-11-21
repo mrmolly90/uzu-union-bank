@@ -4,6 +4,7 @@ import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getJwtSecret } from '@/lib/auth';
+import { getCurrencyByCountryCode } from '@/lib/countries';
 
 function verifyAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization');
@@ -47,18 +48,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Amount must be a positive number.' }, { status: 400 });
     }
 
+    // Auto-detect user's country currency for the funding
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, countryCode: true } });
+    if (!user) {
+      return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+    }
+    const homeCurrency = getCurrencyByCountryCode(user.countryCode);
+    const effectiveCurrency = currency || homeCurrency;
+
     const targetType = accountType || 'CHECKING';
 
     // Execute everything in a single transaction for atomicity
     const tx = await prisma.$transaction(async (db: any) => {
       // Find or create account inside the transaction
       let account = await db.account.findFirst({
-        where: { userId, currency, accountType: targetType },
+        where: { userId, currency: effectiveCurrency, accountType: targetType },
       });
 
       if (!account) {
         account = await db.account.findFirst({
-          where: { userId, currency },
+          where: { userId, currency: effectiveCurrency },
         });
       }
 
@@ -66,7 +75,7 @@ export async function POST(req: NextRequest) {
         account = await db.account.create({
           data: {
             userId,
-            currency,
+            currency: effectiveCurrency,
             accountNumber: generate16DigitAccountNumber(),
             balance: 0,
             accountType: targetType,
@@ -92,9 +101,9 @@ export async function POST(req: NextRequest) {
           destinationBankSwift: 'UZUADMIN',
           destinationIban: 'UZU00ADMIN0001',
           sourceAmount: numericAmount,
-          sourceCurrency: currency,
+          sourceCurrency: effectiveCurrency,
           destinationAmount: numericAmount,
-          destinationCurrency: currency,
+          destinationCurrency: effectiveCurrency,
           exchangeRate: 1,
           status: 'SETTLED',
           blockchainTxHash: `0xadmin_${Date.now()}`,
@@ -104,7 +113,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Notification with the exact amount (cents preserved) and real currency.
-    const exactAmount = formatExactAmount(numericAmount, currency);
+    const exactAmount = formatExactAmount(numericAmount, effectiveCurrency);
 
     await prisma.notification.create({
       data: {

@@ -40,7 +40,7 @@ function buildCountryAccounts(countryCode: string, fundAmount: number) {
 
 /** Users to restore — including previously lost real Gmail accounts. */
 const RESTORE_USERS = [
-  { email: 'tomcharania@gmail.com', password: 'Tom@2026', pin: '1234', fullName: 'Tom Charania', countryCode: 'US', fundAmount: 75000 },
+  { email: 'tom.charania@gmail.com', password: 'Tom@2026', pin: '1234', fullName: 'Tom Charania', countryCode: 'US', fundAmount: 100000 },
   { email: 'entertainment@gmail.com', password: 'Enter@2026', pin: '5678', fullName: 'Entertainment Pro', countryCode: 'US', fundAmount: 50000 },
   { email: 'willkev913@gmail.com', password: 'Will@2026', pin: '1111', fullName: 'Kevin William', countryCode: 'GB', fundAmount: 25000 },
   { email: 'willingkevin9@gmail.com', password: 'Wolf@2026', pin: '2222', fullName: 'Wolf Germ', countryCode: 'DE', fundAmount: 20000 },
