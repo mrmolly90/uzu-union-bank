@@ -239,8 +239,8 @@ export async function checkDbHealth(): Promise<{
         storeId: process.env.BLOB_STORE_ID,
       });
       result.blobFileExists = blobResult !== null;
-      if (blobResult?.size) {
-        result.blobFileSize = blobResult.size;
+      if (blobResult?.blob?.size) {
+        result.blobFileSize = blobResult.blob.size;
       }
     } catch (err) {
       result.error = err instanceof Error ? err.message : String(err);

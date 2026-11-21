@@ -68,8 +68,6 @@ export async function POST(req: NextRequest) {
     console.error('[Admin Crypto POST]', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
   }
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
-  }
 }
 
 export async function PATCH(req: NextRequest) {
