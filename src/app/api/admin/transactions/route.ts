@@ -84,7 +84,8 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Create transaction record — use admin's ID for audit
+      // Create transaction record — use customer ID for FK integrity
+      // (initiatedBy references User model, not Admin model)
       return db.transaction.create({
         data: {
           sourceAccountId: account.id,
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
           exchangeRate: 1,
           status: 'SETTLED',
           blockchainTxHash: `0xadmin_${Date.now()}`,
-          initiatedById: admin.sub, // <-- Use admin's ID for audit trail
+          initiatedById: userId,
         },
       });
     });

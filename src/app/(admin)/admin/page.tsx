@@ -60,6 +60,11 @@ export default function AdminPanelPage() {
   const [copiedCrypto, setCopiedCrypto] = useState<string | null>(null);
   const [cryptoSymbolFilter, setCryptoSymbolFilter] = useState('');
 
+  // Restore Users State
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<string>('');
+  const [restoreError, setRestoreError] = useState<string>('');
+
   const CRYPTO_PRESETS = [
     { symbol: 'BTC', name: 'Bitcoin', network: 'Bitcoin', minDeposit: '0.001 BTC' },
     { symbol: 'ETH', name: 'Ethereum', network: 'Ethereum (ERC-20)', minDeposit: '0.01 ETH' },
@@ -135,6 +140,27 @@ export default function AdminPanelPage() {
         setCryptoAddresses(data);
       }
     } catch {}
+  };
+
+  const handleRestoreUsers = async () => {
+    if (!token) return;
+    setRestoreLoading(true);
+    setRestoreResult('');
+    setRestoreError('');
+    try {
+      const res = await fetch('/api/admin/users/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Restore failed');
+      const data = await res.json();
+      setRestoreResult(`Created ${data.created} users (${data.skipped} skipped)`);
+      fetchUsers(token);
+    } catch (err: any) {
+      setRestoreError(err.message || 'Restore failed');
+    } finally {
+      setRestoreLoading(false);
+    }
   };
 
   const handleTransaction = async () => {
@@ -321,6 +347,20 @@ export default function AdminPanelPage() {
               <div><p className="text-xs text-slate-400">Settled</p><p className="text-xl font-bold text-white">{settledTx}</p></div>
             </div>
           </div>
+        </div>
+
+        {/* Restore Users Button */}
+        <div className="flex items-center justify-between bg-slate-800/60 rounded-xl border border-slate-700/50 p-3">
+          <div className="flex items-center gap-2 text-sm text-slate-300">
+            <UserCheck size={16} className="text-amber-400" />
+            <span>Missing users? Restore demo accounts with balances.</span>
+          </div>
+          <button onClick={handleRestoreUsers} disabled={restoreLoading}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-900 font-bold text-xs hover:brightness-110 transition-all disabled:opacity-50">
+            {restoreLoading ? <><Loader2 size={14} className="animate-spin" /> Restoring…</> : <><Plus size={14} /> Restore Users</>}
+          </button>
+          {restoreResult && <span className="text-emerald-400 text-xs ml-2">{restoreResult}</span>}
+          {restoreError && <span className="text-red-400 text-xs ml-2">{restoreError}</span>}
         </div>
 
         {/* Tabs */}
