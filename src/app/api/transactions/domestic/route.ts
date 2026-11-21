@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
@@ -92,6 +92,9 @@ export async function POST(req: NextRequest) {
 
     // Persist DB to Blob
     await syncDbToBlob();
+
+    // Reset Prisma client so subsequent reads see the new transaction
+    await resetPrisma();
 
     return NextResponse.json(tx, { status: 201 });
   } catch (err) {

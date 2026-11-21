@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -27,57 +27,5 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(users);
 }
 
-export async function POST(req: NextRequest) {
-  const admin = verifyAdmin(req);
-  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  try {
-    const prisma = await getPrisma();
-    const body = await req.json();
-    const { userId, accountType, amount } = body;
-
-    if (!userId || !accountType || !amount || amount <= 0) {
-      return NextResponse.json({ error: 'userId, accountType, and amount are required.' }, { status: 400 });
-    }
-
-    // Find the user's savings account in USD
-    const account = await prisma.account.findFirst({
-      where: { userId, accountType, currency: 'USD' },
-    });
-
-    if (!account) {
-      return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
-    }
-
-    // Credit the account
-    const updated = await prisma.account.update({
-      where: { id: account.id },
-      data: { balance: { increment: amount } },
-    });
-
-    // Create a transaction record
-    await prisma.transaction.create({
-      data: {
-        sourceAccountId: account.id,
-        destinationBankSwift: 'UZU-ADMIN',
-        destinationIban: account.accountNumber,
-        sourceAmount: amount,
-        sourceCurrency: 'USD',
-        destinationAmount: amount,
-        destinationCurrency: 'USD',
-        exchangeRate: 1.0,
-        status: 'SETTLED',
-        blockchainTxHash: `0xadmin-${Date.now().toString(36)}`,
-        initiatedById: userId,
-      },
-    });
-
-    // Persist DB to Blob
-    await syncDbToBlob();
-
-    return NextResponse.json({ success: true, account: updated });
-  } catch (err) {
-    console.error('[Admin Fund]', err);
-    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
-  }
-}
+// ❌ POST removed — admin funding is handled by /api/admin/transactions.
+// The old handler duplicated logic and was never called by the frontend.

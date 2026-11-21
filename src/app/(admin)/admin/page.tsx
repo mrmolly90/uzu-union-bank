@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Shield, Users, Wallet, ArrowUpRight, ArrowDownLeft, Bell, LogOut, Search, X, Check, AlertTriangle, DollarSign, RefreshCw, Send, Clock, FileText, BarChart3, Activity, UserCheck, TrendingUp, Globe, Building2, Ban, ToggleLeft, ToggleRight, RotateCcw, Bitcoin, Copy, ExternalLink, Edit3, Plus, Trash2 } from 'lucide-react';
+import { Shield, Users, Wallet, ArrowUpRight, ArrowDownLeft, Bell, LogOut, Search, X, Check, AlertTriangle, DollarSign, RefreshCw, Send, Clock, FileText, BarChart3, Activity, UserCheck, TrendingUp, Globe, Building2, Ban, ToggleLeft, ToggleRight, RotateCcw, Bitcoin, Copy, ExternalLink, Edit3, Plus, Trash2, Loader2 } from 'lucide-react';
 
 interface AdminUser {
   id: string;
@@ -97,6 +97,24 @@ export default function AdminPanelPage() {
       setUsers(data);
     } catch { localStorage.removeItem('uzu-admin-token'); router.push('/admin/login'); }
     finally { setLoading(false); }
+  };
+
+  const approveKyc = async (userId: string, kycStatus: string) => {
+    if (!token) return;
+    setStatusLoading(userId);
+    try {
+      const res = await fetch('/api/admin/kyc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, kycStatus }),
+      });
+      if (!res.ok) throw new Error('Failed to update KYC');
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, kycStatus } : u));
+    } catch (err) {
+      console.error('KYC update error:', err);
+    } finally {
+      setStatusLoading(null);
+    }
   };
 
   const fetchTransactions = async (t: string) => {
@@ -386,12 +404,29 @@ export default function AdminPanelPage() {
                         <td className="p-3 text-slate-400 text-xs">{u.email}</td>
                         <td className="p-3"><span className="text-xs text-slate-400">{u.accounts.length} accounts</span></td>
                         <td className="p-3 text-right text-white font-semibold">${u.accounts.reduce((s, a) => s + Number(a.balance), 0).toLocaleString()}</td>
-                        <td className="p-3 text-center"><span className={`text-[10px] px-2 py-0.5 rounded-full ${u.kycStatus === 'VERIFIED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>{u.kycStatus}</span></td>
                         <td className="p-3 text-center">
-                          <button onClick={() => { setSelectedUser(u); setTxForm({ ...txForm, userId: u.id }); setActiveTab('funds'); }}
-                            className="px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-400 text-[10px] font-medium hover:bg-amber-500/20 transition-colors">
-                            Manage Funds
-                          </button>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${u.kycStatus === 'VERIFIED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>{u.kycStatus}</span>
+                        </td>
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {u.kycStatus !== 'VERIFIED' ? (
+                              <button onClick={() => approveKyc(u.id, 'VERIFIED')} disabled={statusLoading === u.id}
+                                className="px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-[9px] font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50 flex items-center gap-1">
+                                {statusLoading === u.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                                Approve
+                              </button>
+                            ) : (
+                              <button onClick={() => approveKyc(u.id, 'PENDING')} disabled={statusLoading === u.id}
+                                className="px-2 py-1 rounded-lg bg-red-500/10 text-red-400 text-[9px] font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50 flex items-center gap-1">
+                                {statusLoading === u.id ? <Loader2 size={10} className="animate-spin" /> : <Ban size={10} />}
+                                Revoke
+                              </button>
+                            )}
+                            <button onClick={() => { setSelectedUser(u); setTxForm({ ...txForm, userId: u.id }); setActiveTab('funds'); }}
+                              className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-[9px] font-medium hover:bg-amber-500/20 transition-colors">
+                              Funds
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

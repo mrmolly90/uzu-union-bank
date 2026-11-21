@@ -8,6 +8,7 @@
 import { PrismaClient } from '@prisma/client';
 import { createClient } from '@libsql/client';
 import { PrismaLibSQL } from '@prisma/adapter-libsql';
+import { put, get, head } from '@vercel/blob';
 import path from 'path';
 import fs from 'fs';
 
@@ -27,15 +28,14 @@ function ensureTmpDir(): void {
 /**
  * On Vercel, try to restore the DB from Blob storage first.
  * If Blob is empty or unavailable, fall back to the build-time seed DB.
+ *
+ * SKIPS the full download when the local /tmp/ DB is already at least as
+ * large as the blob. This avoids unnecessary I/O after resetPrisma() is
+ * called on the same instance that just performed a write (local DB is
+ * already the freshest version).
  */
 async function restoreFromBlob(): Promise<void> {
   ensureTmpDir();
-
-  // If /tmp/ DB already has data, keep it — don't overwrite from Blob
-  if (fs.existsSync(TMP_DB_PATH)) {
-    const stats = fs.statSync(TMP_DB_PATH);
-    if (stats.size > 4096) return;
-  }
 
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   const storeId = process.env.BLOB_STORE_ID;
@@ -45,40 +45,79 @@ async function restoreFromBlob(): Promise<void> {
     return;
   }
 
+  // Quick head() check: get blob metadata without downloading the full file
+  let blobMeta: { downloadUrl?: string; blob?: { size?: number } } | null = null;
   try {
-    // Use Vercel Blob REST API directly
-    const apiUrl = `https://blob.vercel-storage.com/${BLOB_DB_KEY}`;
-    const response = await fetch(apiUrl, {
-      headers: {
-        Authorization: `Bearer ${blobToken}`,
-        'x-store-id': storeId,
-      },
-    });
-    if (response.ok) {
-      const buffer = Buffer.from(await response.arrayBuffer());
-      if (buffer.length > 4096) {
-        console.log('[Prisma] Restored DB from Blob (' + buffer.length + ' bytes)');
-        fs.writeFileSync(TMP_DB_PATH, buffer);
-        return;
-      }
-    }
-    console.log('[Prisma] Blob empty or not found (' + response.status + '), using seed DB');
-  } catch (err) {
-    console.error('[Prisma] Blob restore failed:', err instanceof Error ? err.message : String(err));
+    blobMeta = await head(BLOB_DB_KEY, { token: blobToken, storeId });
+  } catch {
+    // Blob doesn't exist yet — fall through to seed DB
   }
 
+  // If local DB exists and is at least as large as blob, skip download.
+  // This handles the common case where resetPrisma() was called after a
+  // write on the same instance — the local file is already the latest.
+  if (fs.existsSync(TMP_DB_PATH)) {
+    const localSize = fs.statSync(TMP_DB_PATH).size;
+    const blobSize = blobMeta?.blob?.size ?? 0;
+    if (localSize > 4096 && localSize >= blobSize) return;
+  }
+
+  // Download from Blob: try head() + fetch first, then get() fallback.
+  let blobBuffer: Buffer | null = null;
+
+  if (blobMeta?.downloadUrl) {
+    try {
+      const response = await fetch(blobMeta.downloadUrl, {
+        headers: { Authorization: `Bearer ${blobToken}` },
+      });
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        blobBuffer = Buffer.from(arrayBuffer);
+      }
+    } catch {
+      // Fall through to get() fallback
+    }
+  }
+
+  // Fallback: try get() directly (works if store ID case matches)
+  if (!blobBuffer || blobBuffer.length <= 4096) {
+    try {
+      const blobResult = await get(BLOB_DB_KEY, {
+        access: 'private',
+        token: blobToken,
+        storeId,
+      });
+      if (blobResult?.stream) {
+        const reader = blobResult.stream.getReader();
+        const chunks: Uint8Array[] = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+        if (totalLength > 4096) {
+          blobBuffer = Buffer.concat(chunks);
+        }
+      }
+    } catch {
+      // Both methods failed — fall through to seed DB
+    }
+  }
+
+  if (blobBuffer && blobBuffer.length > 4096) {
+    console.log('[Prisma] Restored DB from Blob (' + blobBuffer.length + ' bytes)');
+    fs.writeFileSync(TMP_DB_PATH, blobBuffer);
+    return;
+  }
+
+  console.log('[Prisma] Blob empty or not found, using seed DB');
   copyBuildDbToTmp();
 }
 
 /** Copy the build-time seeded DB to /tmp/ as a fallback. */
 function copyBuildDbToTmp(): void {
   ensureTmpDir();
-
-  // If /tmp/ DB already exists AND has data (not empty), keep it — don't overwrite
-  if (fs.existsSync(TMP_DB_PATH)) {
-    const stats = fs.statSync(TMP_DB_PATH);
-    if (stats.size > 4096) return; // non-empty DB, keep existing data
-  }
 
   const possiblePaths = [
     path.join(process.cwd(), 'prisma', 'uzu_bank.db'),
@@ -117,30 +156,96 @@ export async function syncDbToBlob(): Promise<void> {
     }
     const buffer = fs.readFileSync(TMP_DB_PATH);
 
-    // Use Vercel Blob REST API directly
-    const apiUrl = `https://blob.vercel-storage.com/${BLOB_DB_KEY}`;
-    const response = await fetch(apiUrl, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${blobToken}`,
-        'x-store-id': storeId,
-        'Content-Type': 'application/octet-stream',
-        'x-add-random-suffix': 'false',
-        'x-access': 'private',
-      },
-      body: buffer,
+    // Use @vercel/blob SDK to upload the DB file with allowOverwrite
+    await put(BLOB_DB_KEY, buffer, {
+      access: 'private',
+      token: blobToken,
+      storeId,
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      contentType: 'application/octet-stream',
     });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'unknown');
-      console.error('[Prisma] Failed to sync DB to Blob: HTTP ' + response.status + ' ' + errorText);
-      return;
-    }
 
     console.log('[Prisma] Synced DB to Blob (' + buffer.length + ' bytes)');
   } catch (err) {
     console.error('[Prisma] Failed to sync DB to Blob:', err instanceof Error ? err.message : String(err));
   }
+}
+
+/**
+ * Force-sync the current DB to Blob immediately.
+ * Used by the health-check endpoint to persist data on demand.
+ */
+export async function forceSyncDbToBlob(): Promise<{ ok: boolean; size: number; error?: string }> {
+  try {
+    if (!fs.existsSync(TMP_DB_PATH)) {
+      return { ok: false, size: 0, error: 'DB file not found at ' + TMP_DB_PATH };
+    }
+    const stats = fs.statSync(TMP_DB_PATH);
+    await syncDbToBlob();
+    return { ok: true, size: stats.size };
+  } catch (err) {
+    return { ok: false, size: 0, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Check the current state of the DB and Blob persistence.
+ * Returns diagnostic info for debugging.
+ */
+export async function checkDbHealth(): Promise<{
+  dbExists: boolean;
+  dbSize: number;
+  dbPath: string;
+  isVercel: boolean;
+  hasBlobToken: boolean;
+  hasStoreId: boolean;
+  blobFileExists: boolean;
+  blobFileSize?: number;
+  error?: string;
+}> {
+  const result: {
+    dbExists: boolean;
+    dbSize: number;
+    dbPath: string;
+    isVercel: boolean;
+    hasBlobToken: boolean;
+    hasStoreId: boolean;
+    blobFileExists: boolean;
+    blobFileSize?: number;
+    error?: string;
+  } = {
+    dbExists: fs.existsSync(TMP_DB_PATH),
+    dbSize: 0,
+    dbPath: TMP_DB_PATH,
+    isVercel: !!process.env.VERCEL,
+    hasBlobToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+    hasStoreId: !!process.env.BLOB_STORE_ID,
+    blobFileExists: false,
+  };
+
+  if (result.dbExists) {
+    result.dbSize = fs.statSync(TMP_DB_PATH).size;
+  }
+
+  // Try to check if blob exists remotely
+  if (result.isVercel && result.hasBlobToken && result.hasStoreId) {
+    try {
+      const blobResult = await get(BLOB_DB_KEY, {
+        access: 'private',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+        storeId: process.env.BLOB_STORE_ID,
+      });
+      result.blobFileExists = blobResult !== null;
+      if (blobResult?.blob?.size) {
+        result.blobFileSize = blobResult.blob.size;
+      }
+    } catch (err) {
+      result.error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  return result;
 }
 
 function resolveDatabaseUrl(): string {
@@ -200,12 +305,15 @@ function createPrismaClient(): PrismaClient {
 
 /**
  * Get the Prisma client singleton.
- * On Vercel, this also restores the DB from Blob on first call.
+ * On warm instances, returns the cached client immediately — no I/O.
+ * On cold start (or after resetPrisma), restores from Blob first,
+ * then creates and caches a fresh client.
  */
 export async function getPrisma(): Promise<PrismaClient> {
+  // Return cached client immediately on warm instances (no Blob I/O)
   if (globalForPrisma.prisma) return globalForPrisma.prisma;
 
-  // On Vercel, restore persisted DB from Blob before creating client
+  // No cached client — restore from Blob first (cold start or after write)
   if (process.env.VERCEL) {
     await restoreFromBlob();
   }
@@ -213,4 +321,21 @@ export async function getPrisma(): Promise<PrismaClient> {
   const client = createPrismaClient();
   globalForPrisma.prisma = client;
   return client;
+}
+
+/**
+ * Disconnect and reset the Prisma client singleton.
+ * Call this after write operations so the next getPrisma() call
+ * re-builds the client and re-downloads the freshest DB from Blob.
+ * This is critical for cross-instance consistency on Vercel.
+ */
+export async function resetPrisma(): Promise<void> {
+  if (globalForPrisma.prisma) {
+    try {
+      await globalForPrisma.prisma.$disconnect();
+    } catch {
+      // Ignore disconnect errors
+    }
+    globalForPrisma.prisma = undefined as unknown as PrismaClient;
+  }
 }

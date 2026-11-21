@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { transferSchema } from '@/lib/validations';
@@ -63,19 +63,63 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
     }
 
-    if (Number(sourceAccount.balance) < sourceAmount) {
-      return NextResponse.json({ error: 'Insufficient funds.' }, { status: 400 });
+    const transferFee = fee || Math.max(3, sourceAmount * 0.001);
+    const totalDebit = sourceAmount + transferFee;
+
+    if (Number(sourceAccount.balance) < totalDebit) {
+      return NextResponse.json({ error: 'Insufficient funds. You need additional funds to cover the transfer fee.' }, { status: 400 });
     }
 
-    // Get exchange rate
-    const rate = await prisma.exchangeRate.findUnique({
-      where: {
-        base_quote: {
-          base: sourceAccount.currency,
-          quote: destinationCurrency as any,
+    // Get exchange rate — supports both direct (USD→EUR) and indirect (EUR→GBP)
+    // lookup: all stored rates are USD-quoted, so cross-pairs are computed.
+    let rate: { base: string; quote: string; rate: number } | null = null;
+
+    if (sourceAccount.currency === destinationCurrency) {
+      // Same-currency transfer: rate is 1
+      rate = { base: sourceAccount.currency, quote: destinationCurrency, rate: 1 };
+    } else {
+      const direct = await prisma.exchangeRate.findUnique({
+        where: {
+          base_quote: {
+            base: sourceAccount.currency as any,
+            quote: destinationCurrency as any,
+          },
         },
-      },
-    });
+      });
+      if (direct) {
+        rate = { base: direct.base, quote: direct.quote, rate: Number(direct.rate) };
+      } else if (sourceAccount.currency === 'USD') {
+        // USD → X: direct lookup
+        const usdRate = await prisma.exchangeRate.findUnique({
+          where: { base_quote: { base: 'USD', quote: destinationCurrency as any } },
+        });
+        if (usdRate) rate = { base: 'USD', quote: destinationCurrency, rate: Number(usdRate.rate) };
+      } else {
+        // Cross-pair: sourceCurrency → USD (inverse) then USD → destCurrency
+        const toUsd = await prisma.exchangeRate.findUnique({
+          where: { base_quote: { base: 'USD', quote: sourceAccount.currency as any } },
+        });
+        const fromUsd = await prisma.exchangeRate.findUnique({
+          where: { base_quote: { base: 'USD', quote: destinationCurrency as any } },
+        });
+        if (toUsd && fromUsd) {
+          const usdPerSource = Number(toUsd.rate);
+          const destPerUsd = Number(fromUsd.rate);
+          rate = {
+            base: sourceAccount.currency,
+            quote: destinationCurrency,
+            rate: destPerUsd / usdPerSource,
+          };
+        } else if (toUsd && destinationCurrency === 'USD') {
+          // sourceCurrency → USD
+          rate = {
+            base: sourceAccount.currency,
+            quote: 'USD',
+            rate: 1 / Number(toUsd.rate),
+          };
+        }
+      }
+    }
 
     if (!rate) {
       return NextResponse.json(
@@ -86,14 +130,13 @@ export async function POST(req: NextRequest) {
 
     const exchangeRate = Number(rate.rate);
     const destinationAmount = sourceAmount * exchangeRate;
-    const transferFee = fee || Math.max(3, sourceAmount * 0.001);
 
     // Execute wire in a transaction (double-entry bookkeeping)
     const tx = await prisma.$transaction(async (tx: any) => {
       // Debit source (amount + fee)
       await tx.account.update({
         where: { id: sourceAccountId },
-        data: { balance: { decrement: sourceAmount + transferFee } },
+        data: { balance: { decrement: totalDebit } },
       });
 
       // Create transaction record
@@ -120,6 +163,9 @@ export async function POST(req: NextRequest) {
 
     // Persist DB to Blob
     await syncDbToBlob();
+
+    // Reset Prisma client so subsequent reads see the new transaction
+    await resetPrisma();
 
     return NextResponse.json(tx, { status: 201 });
   } catch (err) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { hashPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { registerSchema } from '@/lib/validations';
 import { buildOpeningAccounts } from '@/lib/accounts';
@@ -84,10 +84,19 @@ export async function POST(req: NextRequest) {
           console.error('[Register] welcome notification creation failed', notificationError);
         }
 
+        // Auto-approve KYC for new registrations
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { kycStatus: 'VERIFIED' },
+        });
+
         const tokens = await createAuthTokens(user);
 
         // Persist DB to Blob so user survives cold starts
         await syncDbToBlob();
+
+        // Reset Prisma client so subsequent API calls see the new user
+        await resetPrisma();
 
         return NextResponse.json({ user: sanitizeUser(user), tokens }, { status: 201 });
       } catch (err) {

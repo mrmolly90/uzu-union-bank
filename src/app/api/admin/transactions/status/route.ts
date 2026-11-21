@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { getJwtSecret } from '@/lib/auth';
 
@@ -92,6 +92,10 @@ export async function PATCH(req: NextRequest) {
       where: { id: transactionId },
       data: { status, failureReason: failureReason || null },
     });
+
+    // Persist DB to Blob so status changes survive cold starts
+    await syncDbToBlob();
+    await resetPrisma();
 
     return NextResponse.json(updated);
   } catch (err) {

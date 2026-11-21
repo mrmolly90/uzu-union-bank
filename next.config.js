@@ -6,6 +6,10 @@ const nextConfig = {
     domains: ['localhost', 'uzu-union-bank.vercel.app'],
     unoptimized: process.env.NODE_ENV === 'development',
   },
+  // Ensure @vercel/blob SDK works in serverless functions
+  experimental: {
+    serverComponentsExternalPackages: ['@vercel/blob'],
+  },
   // Production optimizations
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? {
