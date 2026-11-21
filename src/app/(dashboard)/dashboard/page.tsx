@@ -155,7 +155,7 @@ export default function DashboardPage() {
       if (cryptoRes.ok) { const data = await cryptoRes.json(); setCryptoAddresses(data); }
     } catch (err) { console.error('Fetch error:', err); }
     finally { setLoading(false); }
-  }, [activeAccount, setRates]);
+  }, [setRates]); // <-- intentionally excludes activeAccount to avoid infinite loop with setActiveAccount inside
 
   useEffect(() => {
     if (!mounted) return;

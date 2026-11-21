@@ -57,6 +57,12 @@ export async function PATCH(req: NextRequest) {
           type: 'INFO',
         },
       });
+    } else if (status === 'REVERSED' && tx.status === 'FAILED') {
+      // Cannot reverse a FAILED transaction — funds already refunded
+      return NextResponse.json({ error: 'Cannot reverse a failed transaction. It has already been refunded.' }, { status: 400 });
+    } else if (status === 'REVERSED' && tx.status === 'REVERSED') {
+      // Idempotent: already reversed, skip
+      return NextResponse.json({ message: 'Transaction already reversed.' });
     }
 
     // If settling, create a credit notification
@@ -94,8 +100,12 @@ export async function PATCH(req: NextRequest) {
     });
 
     // Persist DB to Blob so status changes survive cold starts
-    await syncDbToBlob();
-    await resetPrisma();
+    try {
+      await syncDbToBlob();
+      await resetPrisma();
+    } catch (syncErr) {
+      console.error('[Admin Transaction Status] Blob sync failed (non-fatal):', syncErr);
+    }
 
     return NextResponse.json(updated);
   } catch (err) {

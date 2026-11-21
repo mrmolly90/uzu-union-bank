@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
           include: { accounts: true },
         });
 
+        // Non-critical: welcome notification (failure doesn't block registration)
         try {
           await prisma.notification.create({
             data: {
@@ -92,8 +93,12 @@ export async function POST(req: NextRequest) {
 
         const tokens = await createAuthTokens(user);
 
-        // Persist DB to Blob so user survives cold starts
-        await syncDbToBlob();
+        // Try to persist DB to Blob (best-effort — user data exists in local DB)
+        try {
+          await syncDbToBlob();
+        } catch (syncErr) {
+          console.error('[Register] Blob sync failed (non-fatal):', syncErr);
+        }
 
         // Reset Prisma client so subsequent API calls see the new user
         await resetPrisma();

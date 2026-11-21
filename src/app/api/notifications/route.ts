@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
@@ -36,6 +36,13 @@ export async function PATCH(req: NextRequest) {
       await prisma.notification.update({ where: { id }, data: { read: true } });
     } else {
       await prisma.notification.updateMany({ where: { userId: decoded.sub }, data: { read: true } });
+    }
+
+    // Persist read status to Blob
+    try {
+      await syncDbToBlob();
+    } catch (syncErr) {
+      console.error('[Notifications PATCH] Blob sync failed (non-fatal):', syncErr);
     }
 
     return NextResponse.json({ success: true });

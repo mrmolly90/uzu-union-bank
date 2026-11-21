@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -37,22 +37,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'symbol, name, network, and address required' }, { status: 400 });
     }
 
-    const existing = await prisma.cryptoAddress.findUnique({ where: { symbol } });
-    if (existing) {
-      const updated = await prisma.cryptoAddress.update({
-        where: { symbol },
-        data: { name, network, address, minDeposit: minDeposit || '', isActive: true },
-      });
-      return NextResponse.json(updated);
-    }
-
-    const created = await prisma.cryptoAddress.create({
-      data: { symbol, name, network, address, minDeposit: minDeposit || '' },
+    // Use upsert to avoid race condition between findUnique + create
+    const created = await prisma.cryptoAddress.upsert({
+      where: { symbol },
+      update: {
+        name,
+        network,
+        address,
+        minDeposit: minDeposit || '',
+        isActive: true,
+      },
+      create: {
+        symbol,
+        name,
+        network,
+        address,
+        minDeposit: minDeposit || '',
+      },
     });
+
+    try {
+      await syncDbToBlob();
+      await resetPrisma();
+    } catch (syncErr) {
+      console.error('[Admin Crypto POST] Blob sync failed (non-fatal):', syncErr);
+    }
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
     console.error('[Admin Crypto POST]', err);
+    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
+  }
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
   }
 }
@@ -80,6 +95,9 @@ export async function PATCH(req: NextRequest) {
       where: { id },
       data,
     });
+
+    await syncDbToBlob();
+    await resetPrisma();
 
     return NextResponse.json(updated);
   } catch (err) {

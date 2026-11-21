@@ -2,7 +2,51 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
+import { formatExactAmount } from '@/lib/format';
 import { transferSchema } from '@/lib/validations';
+
+/** Fallback FX rates used when the database doesn't have a pair. */
+const FALLBACK_RATES: Record<string, number> = {
+  'USD': 1, 'EUR': 0.9222, 'GBP': 0.7920, 'JPY': 149.94, 'CHF': 0.8806,
+  'SGD': 1.3245, 'AED': 3.6730, 'AUD': 1.5420, 'CAD': 1.3740, 'CNY': 7.2450,
+  'HKD': 7.8200, 'INR': 83.45, 'KRW': 1325.0, 'MXN': 17.25, 'NGN': 1550.0,
+  'NOK': 10.85, 'NZD': 1.6650, 'SEK': 10.52, 'TRY': 30.25, 'ZAR': 18.75,
+  'BRL': 5.12, 'PHP': 56.20, 'THB': 35.80, 'MYR': 4.72, 'IDR': 15750,
+  'VND': 25450, 'SAR': 3.75, 'QAR': 3.64, 'KWD': 0.308, 'OMR': 0.385,
+  'BHD': 0.376, 'PLN': 4.02, 'DKK': 6.88, 'CZK': 23.15, 'HUF': 362.5,
+  'RON': 4.62, 'BGN': 1.80, 'HRK': 6.95, 'ISK': 138.5, 'RUB': 92.5,
+  'EGP': 30.90, 'KES': 145.0, 'GHS': 12.85, 'TZS': 2520, 'UGX': 3800,
+  'ETB': 56.50, 'MAD': 10.15, 'DZD': 135.0, 'TND': 3.12, 'PKR': 278.5,
+  'BDT': 109.5, 'LKR': 310.0, 'NPR': 133.5, 'AFN': 72.5,
+};
+
+/** Look up an exchange rate — first in DB, then from fallback map. */
+async function lookupRate(
+  prisma: any,
+  base: string,
+  quote: string
+): Promise<number | null> {
+  // Direct lookup in DB
+  const dbRate = await prisma.exchangeRate.findUnique({
+    where: { base_quote: { base, quote } },
+  });
+  if (dbRate) return Number(dbRate.rate);
+
+  // Inverse lookup in DB
+  const inverse = await prisma.exchangeRate.findUnique({
+    where: { base_quote: { base: quote, quote: base } },
+  });
+  if (inverse) return 1 / Number(inverse.rate);
+
+  // Fallback: convert via USD
+  const baseToUsd = base === 'USD' ? 1 : (FALLBACK_RATES[base] ? 1 / FALLBACK_RATES[base] : null);
+  const quoteFromUsd = quote === 'USD' ? 1 : (FALLBACK_RATES[quote] ?? null);
+  if (baseToUsd !== null && quoteFromUsd !== null) {
+    return quoteFromUsd * baseToUsd;
+  }
+
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -70,65 +114,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Insufficient funds. You need additional funds to cover the transfer fee.' }, { status: 400 });
     }
 
-    // Get exchange rate — supports both direct (USD→EUR) and indirect (EUR→GBP)
-    // lookup: all stored rates are USD-quoted, so cross-pairs are computed.
-    let rate: { base: string; quote: string; rate: number } | null = null;
+    // Get exchange rate using lookupRate (DB first, then fallback map)
+    let exchangeRate: number | null = null;
 
     if (sourceAccount.currency === destinationCurrency) {
       // Same-currency transfer: rate is 1
-      rate = { base: sourceAccount.currency, quote: destinationCurrency, rate: 1 };
+      exchangeRate = 1;
     } else {
-      const direct = await prisma.exchangeRate.findUnique({
-        where: {
-          base_quote: {
-            base: sourceAccount.currency as any,
-            quote: destinationCurrency as any,
-          },
-        },
-      });
-      if (direct) {
-        rate = { base: direct.base, quote: direct.quote, rate: Number(direct.rate) };
-      } else if (sourceAccount.currency === 'USD') {
-        // USD → X: direct lookup
-        const usdRate = await prisma.exchangeRate.findUnique({
-          where: { base_quote: { base: 'USD', quote: destinationCurrency as any } },
-        });
-        if (usdRate) rate = { base: 'USD', quote: destinationCurrency, rate: Number(usdRate.rate) };
-      } else {
-        // Cross-pair: sourceCurrency → USD (inverse) then USD → destCurrency
-        const toUsd = await prisma.exchangeRate.findUnique({
-          where: { base_quote: { base: 'USD', quote: sourceAccount.currency as any } },
-        });
-        const fromUsd = await prisma.exchangeRate.findUnique({
-          where: { base_quote: { base: 'USD', quote: destinationCurrency as any } },
-        });
-        if (toUsd && fromUsd) {
-          const usdPerSource = Number(toUsd.rate);
-          const destPerUsd = Number(fromUsd.rate);
-          rate = {
-            base: sourceAccount.currency,
-            quote: destinationCurrency,
-            rate: destPerUsd / usdPerSource,
-          };
-        } else if (toUsd && destinationCurrency === 'USD') {
-          // sourceCurrency → USD
-          rate = {
-            base: sourceAccount.currency,
-            quote: 'USD',
-            rate: 1 / Number(toUsd.rate),
-          };
-        }
-      }
+      exchangeRate = await lookupRate(prisma, sourceAccount.currency, destinationCurrency);
     }
 
-    if (!rate) {
+    if (exchangeRate === null) {
       return NextResponse.json(
         { error: `Exchange rate ${sourceAccount.currency}/${destinationCurrency} is unavailable.` },
         { status: 503 }
       );
     }
 
-    const exchangeRate = Number(rate.rate);
     const destinationAmount = sourceAmount * exchangeRate;
 
     // Execute wire in a transaction (double-entry bookkeeping)
@@ -161,11 +163,23 @@ export async function POST(req: NextRequest) {
       return transaction;
     });
 
-    // Persist DB to Blob
-    await syncDbToBlob();
+    // Notify user of the wire initiation
+    await prisma.notification.create({
+      data: {
+        userId: decoded.sub,
+        title: 'International Wire Initiated',
+        message: `${formatExactAmount(sourceAmount, sourceAccount.currency)} → ${formatExactAmount(destinationAmount, destinationCurrency)} to ${destinationBankName || destinationBankSwift} (${destinationIban})`,
+        type: 'DEBIT',
+      },
+    });
 
-    // Reset Prisma client so subsequent reads see the new transaction
-    await resetPrisma();
+    // Persist DB to Blob
+    try {
+      await syncDbToBlob();
+      await resetPrisma();
+    } catch (syncErr) {
+      console.error('[Transactions POST] Blob sync failed (non-fatal):', syncErr);
+    }
 
     return NextResponse.json(tx, { status: 201 });
   } catch (err) {

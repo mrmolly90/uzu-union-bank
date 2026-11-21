@@ -46,9 +46,11 @@ async function restoreFromBlob(): Promise<void> {
   }
 
   // Quick head() check: get blob metadata without downloading the full file
-  let blobMeta: { downloadUrl?: string; blob?: { size?: number } } | null = null;
+  let blobMeta: { downloadUrl?: string; size?: number } | null = null;
   try {
-    blobMeta = await head(BLOB_DB_KEY, { token: blobToken, storeId });
+    const meta = await head(BLOB_DB_KEY, { token: blobToken, storeId });
+    // @vercel/blob head() returns size at the top level
+    blobMeta = meta as any;
   } catch {
     // Blob doesn't exist yet — fall through to seed DB
   }
@@ -58,7 +60,7 @@ async function restoreFromBlob(): Promise<void> {
   // write on the same instance — the local file is already the latest.
   if (fs.existsSync(TMP_DB_PATH)) {
     const localSize = fs.statSync(TMP_DB_PATH).size;
-    const blobSize = blobMeta?.blob?.size ?? 0;
+    const blobSize = blobMeta?.size ?? 0;
     if (localSize > 4096 && localSize >= blobSize) return;
   }
 
@@ -237,8 +239,8 @@ export async function checkDbHealth(): Promise<{
         storeId: process.env.BLOB_STORE_ID,
       });
       result.blobFileExists = blobResult !== null;
-      if (blobResult?.blob?.size) {
-        result.blobFileSize = blobResult.blob.size;
+      if (blobResult?.size) {
+        result.blobFileSize = blobResult.size;
       }
     } catch (err) {
       result.error = err instanceof Error ? err.message : String(err);
@@ -328,6 +330,15 @@ export async function getPrisma(): Promise<PrismaClient> {
  * Call this after write operations so the next getPrisma() call
  * re-builds the client and re-downloads the freshest DB from Blob.
  * This is critical for cross-instance consistency on Vercel.
+ *
+ * IMPORTANT: This should only be called AFTER syncDbToBlob() succeeds.
+ * If you call resetPrisma() without syncing first, the next request
+ * will restore the stale Blob over the local DB and lose writes.
+ *
+ * Safe usage pattern:
+ *   await syncDbToBlob();
+ *   await resetPrisma();
+ * Both wrapped in try-catch so a sync failure doesn't destroy local data.
  */
 export async function resetPrisma(): Promise<void> {
   if (globalForPrisma.prisma) {

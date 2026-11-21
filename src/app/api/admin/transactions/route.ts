@@ -49,42 +49,45 @@ export async function POST(req: NextRequest) {
 
     const targetType = accountType || 'CHECKING';
 
-    // Find account for this currency and type
-    let account = await prisma.account.findFirst({
-      where: { userId, currency, accountType: targetType },
-    });
-
-    if (!account) {
-      account = await prisma.account.findFirst({
-        where: { userId, currency },
+    // Execute everything in a single transaction for atomicity
+    const tx = await prisma.$transaction(async (db: any) => {
+      // Find or create account inside the transaction
+      let account = await db.account.findFirst({
+        where: { userId, currency, accountType: targetType },
       });
-    }
 
-    if (!account) {
-      account = await prisma.account.create({
-        data: {
-          userId,
-          currency,
-          accountNumber: generate16DigitAccountNumber(),
-          balance: 0,
-          accountType: targetType,
-        },
-      });
-    }
+      if (!account) {
+        account = await db.account.findFirst({
+          where: { userId, currency },
+        });
+      }
 
-    const tx = await prisma.$transaction(async (db) => {
-      const updated = await db.account.update({
-        where: { id: account!.id },
+      if (!account) {
+        account = await db.account.create({
+          data: {
+            userId,
+            currency,
+            accountNumber: generate16DigitAccountNumber(),
+            balance: 0,
+            accountType: targetType,
+          },
+        });
+      }
+
+      // Update balance
+      await db.account.update({
+        where: { id: account.id },
         data: {
           balance: type === 'credit'
             ? { increment: numericAmount }
-            : { decrement: Math.min(numericAmount, Number(account!.balance)) },
+            : { decrement: Math.min(numericAmount, Number(account.balance)) },
         },
       });
 
+      // Create transaction record — use admin's ID for audit
       return db.transaction.create({
         data: {
-          sourceAccountId: account!.id,
+          sourceAccountId: account.id,
           destinationBankSwift: 'UZUADMIN',
           destinationIban: 'UZU00ADMIN0001',
           sourceAmount: numericAmount,
@@ -94,7 +97,7 @@ export async function POST(req: NextRequest) {
           exchangeRate: 1,
           status: 'SETTLED',
           blockchainTxHash: `0xadmin_${Date.now()}`,
-          initiatedById: userId,
+          initiatedById: admin.sub, // <-- Use admin's ID for audit trail
         },
       });
     });
@@ -112,10 +115,12 @@ export async function POST(req: NextRequest) {
     });
 
     // Persist DB to Blob so funded data survives cold starts
-    await syncDbToBlob();
-
-    // Reset Prisma client so subsequent reads see the funded data
-    await resetPrisma();
+    try {
+      await syncDbToBlob();
+      await resetPrisma();
+    } catch (syncErr) {
+      console.error('[Admin Transactions POST] Blob sync failed (non-fatal):', syncErr);
+    }
 
     return NextResponse.json(tx, { status: 201 });
   } catch (err) {

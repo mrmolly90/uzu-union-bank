@@ -91,10 +91,12 @@ export async function POST(req: NextRequest) {
     });
 
     // Persist DB to Blob
-    await syncDbToBlob();
-
-    // Reset Prisma client so subsequent reads see the new transaction
-    await resetPrisma();
+    try {
+      await syncDbToBlob();
+      await resetPrisma();
+    } catch (syncErr) {
+      console.error('[Domestic Transfer POST] Blob sync failed (non-fatal):', syncErr);
+    }
 
     return NextResponse.json(tx, { status: 201 });
   } catch (err) {

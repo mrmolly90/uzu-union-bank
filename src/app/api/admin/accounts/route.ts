@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -40,6 +40,14 @@ export async function PATCH(req: NextRequest) {
         type: 'INFO',
       },
     });
+
+    // Persist DB to Blob so account status changes survive cold starts
+    try {
+      await syncDbToBlob();
+      await resetPrisma();
+    } catch (syncErr) {
+      console.error('[Admin Account Status] Blob sync failed (non-fatal):', syncErr);
+    }
 
     return NextResponse.json(account);
   } catch (err) {

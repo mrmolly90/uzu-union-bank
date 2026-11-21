@@ -6,7 +6,8 @@ export type TransactionStatus =
   | 'MULTISIG_PENDING'
   | 'CLEARED'
   | 'SETTLED'
-  | 'FAILED';
+  | 'FAILED'
+  | 'REVERSED';
 
 export type Currency = string;
 

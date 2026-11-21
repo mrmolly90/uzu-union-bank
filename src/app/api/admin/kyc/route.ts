@@ -54,10 +54,12 @@ export async function POST(req: NextRequest) {
     });
 
     // Persist DB to Blob
-    await syncDbToBlob();
-
-    // Reset Prisma client so subsequent reads see the update
-    await resetPrisma();
+    try {
+      await syncDbToBlob();
+      await resetPrisma();
+    } catch (syncErr) {
+      console.error('[Admin KYC] Blob sync failed (non-fatal):', syncErr);
+    }
 
     return NextResponse.json({ success: true, user: { id: updated.id, email: updated.email, fullName: updated.fullName, kycStatus: updated.kycStatus } });
   } catch (err) {
