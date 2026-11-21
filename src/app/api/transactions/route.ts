@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
@@ -173,10 +173,9 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Persist DB to Blob
+    // Persist DB to Blob so data survives cold starts
     try {
       await syncDbToBlob();
-      await resetPrisma();
     } catch (syncErr) {
       console.error('[Transactions POST] Blob sync failed (non-fatal):', syncErr);
     }

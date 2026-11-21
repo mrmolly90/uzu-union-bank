@@ -45,15 +45,9 @@ async function main() {
       kycStatus: 'VERIFIED',
       accounts: {
         create: [
-          // Checking accounts — start at $0 until admin deposits
+          // 1 CHECKING + 1 SAVINGS in user's home currency (USD for US)
           { currency: 'USD', accountNumber: '1000000100001001', balance: 0, accountType: 'CHECKING' },
-          { currency: 'EUR', accountNumber: '1000000100001002', balance: 0, accountType: 'CHECKING' },
-          { currency: 'GBP', accountNumber: '1000000100001003', balance: 0, accountType: 'CHECKING' },
-          // Savings accounts — start at $0 until admin deposits
           { currency: 'USD', accountNumber: '2000000100001001', balance: 0, accountType: 'SAVINGS' },
-          { currency: 'EUR', accountNumber: '2000000100001002', balance: 0, accountType: 'SAVINGS' },
-          { currency: 'GBP', accountNumber: '2000000100001003', balance: 0, accountType: 'SAVINGS' },
-          { currency: 'CHF', accountNumber: '2000000100001004', balance: 0, accountType: 'SAVINGS' },
         ],
       },
     },

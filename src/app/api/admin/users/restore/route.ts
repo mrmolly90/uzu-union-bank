@@ -16,26 +16,13 @@ function verifyAdmin(req: NextRequest) {
   } catch { return null; }
 }
 
-/** Build country-appropriate accounts — user's home currency + major currencies. */
+/** Build accounts — exactly 1 CHECKING + 1 SAVINGS in user's home currency. */
 function buildCountryAccounts(countryCode: string, fundAmount: number) {
   const homeCurrency = getCurrencyByCountryCode(countryCode);
-  const currencies = Array.from(new Set([homeCurrency, 'USD', 'EUR', 'GBP']));
-  const accounts: Array<{ currency: string; accountType: string; balance: number; accountNumber: string }> = [];
-  for (const type of ['CHECKING', 'SAVINGS']) {
-    for (const currency of currencies) {
-      const bal = currency === homeCurrency && type === 'CHECKING' ? fundAmount
-                : currency === homeCurrency && type === 'SAVINGS' ? Math.round(fundAmount * 0.5)
-                : currency === 'USD' && type === 'CHECKING' ? Math.round(fundAmount * 0.3)
-                : 0;
-      accounts.push({
-        currency,
-        accountType: type,
-        balance: bal > 0 ? bal : 0,
-        accountNumber: generate16DigitAccountNumber(),
-      });
-    }
-  }
-  return accounts;
+  return [
+    { currency: homeCurrency, accountType: 'CHECKING', balance: fundAmount, accountNumber: generate16DigitAccountNumber() },
+    { currency: homeCurrency, accountType: 'SAVINGS', balance: Math.round(fundAmount * 0.5), accountNumber: generate16DigitAccountNumber() },
+  ];
 }
 
 /** Users to restore — including previously lost real Gmail accounts. */

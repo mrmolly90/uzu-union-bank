@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -58,7 +58,6 @@ export async function POST(req: NextRequest) {
 
     try {
       await syncDbToBlob();
-      await resetPrisma();
     } catch (syncErr) {
       console.error('[Admin Crypto POST] Blob sync failed (non-fatal):', syncErr);
     }
@@ -95,7 +94,6 @@ export async function PATCH(req: NextRequest) {
     });
 
     await syncDbToBlob();
-    await resetPrisma();
 
     return NextResponse.json(updated);
   } catch (err) {

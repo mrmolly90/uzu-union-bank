@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob } from '@/lib/prisma';
 import { hashPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { registerSchema } from '@/lib/validations';
 import { buildOpeningAccounts } from '@/lib/accounts';
@@ -99,9 +99,6 @@ export async function POST(req: NextRequest) {
         } catch (syncErr) {
           console.error('[Register] Blob sync failed (non-fatal):', syncErr);
         }
-
-        // Reset Prisma client so subsequent API calls see the new user
-        await resetPrisma();
 
         return NextResponse.json({ user: sanitizeUser(user), tokens }, { status: 201 });
       } catch (err) {

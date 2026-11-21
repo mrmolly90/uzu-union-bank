@@ -327,18 +327,12 @@ export async function getPrisma(): Promise<PrismaClient> {
 
 /**
  * Disconnect and reset the Prisma client singleton.
- * Call this after write operations so the next getPrisma() call
- * re-builds the client and re-downloads the freshest DB from Blob.
- * This is critical for cross-instance consistency on Vercel.
+ * Kept for backward compatibility but no longer called after every write.
+ * On Vercel serverless, each cold start naturally restores from Blob,
+ * so destroying the warm client only causes stale Blob overwrites.
  *
- * IMPORTANT: This should only be called AFTER syncDbToBlob() succeeds.
- * If you call resetPrisma() without syncing first, the next request
- * will restore the stale Blob over the local DB and lose writes.
- *
- * Safe usage pattern:
- *   await syncDbToBlob();
- *   await resetPrisma();
- * Both wrapped in try-catch so a sync failure doesn't destroy local data.
+ * Only call this explicitly when you know the local DB file has changed
+ * on disk and needs to be re-read (e.g. after a seed/restore operation).
  */
 export async function resetPrisma(): Promise<void> {
   if (globalForPrisma.prisma) {
