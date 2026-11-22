@@ -97,15 +97,18 @@ export async function POST(req: NextRequest) {
       data: { kycStatus: 'VERIFIED' },
     });
 
-    // Persist to Blob
+    // Persist to Blob — if this fails, the restore still succeeded locally
+    // but data won't survive cold starts. Report this to the admin.
+    let syncError: string | null = null;
     try {
       await syncDbToBlob();
       await resetPrisma();
     } catch (syncErr) {
-      console.error('[Admin Restore Users] Blob sync failed:', syncErr);
+      syncError = syncErr instanceof Error ? syncErr.message : String(syncErr);
+      console.error('[Admin Restore Users] Blob sync failed:', syncError);
     }
 
-    return NextResponse.json({ success: true, created, skipped, kycApproved: autoApproved.count, results });
+    return NextResponse.json({ success: true, created, skipped, kycApproved: autoApproved.count, syncError, results });
   } catch (err) {
     console.error('[Admin Restore Users]', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });

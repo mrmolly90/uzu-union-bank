@@ -55,13 +55,18 @@ async function restoreFromBlob(): Promise<void> {
     // Blob doesn't exist yet — fall through to seed DB
   }
 
-  // If local DB exists and is at least as large as blob, skip download.
-  // This handles the common case where resetPrisma() was called after a
-  // write on the same instance — the local file is already the latest.
-  if (fs.existsSync(TMP_DB_PATH)) {
+  // If blob exists and we have a local DB, always download the blob version
+  // because it's the source of truth across all serverless instances.
+  // The only exception: skip if blob is empty/unavailable (first deploy).
+  // This is critical for cross-instance consistency — without it, writes
+  // made by one instance never appear on another instance's cold start.
+  if (blobMeta?.size && blobMeta.size > 4096) {
+    // Blob exists and is non-trivial — we'll download it regardless of local state.
+    // This ensures every cold start gets the freshest cross-instance data.
+  } else if (fs.existsSync(TMP_DB_PATH)) {
+    // Blob is empty/missing but local DB exists — keep local (first deploy scenario)
     const localSize = fs.statSync(TMP_DB_PATH).size;
-    const blobSize = blobMeta?.size ?? 0;
-    if (localSize > 4096 && localSize >= blobSize) return;
+    if (localSize > 4096) return;
   }
 
   // Download from Blob: try head() + fetch first, then get() fallback.
@@ -304,22 +309,18 @@ function createPrismaClient(): PrismaClient {
 /**
  * Get the Prisma client singleton.
  * On warm instances, returns the cached client immediately — no I/O.
- * On cold start, creates a fresh client using the local /tmp/ DB.
- * Only restores from Blob if the local DB is missing or corrupt (< 1KB),
- * preventing stale Blob overwrites of fresh local data.
+ * On cold start (no cached client), ALWAYS restores from Blob first.
+ * This ensures every serverless instance gets the latest data.
+ * The restore is skipped only if this exact instance just wrote the DB
+ * (e.g. after resetPrisma was called with the local file already fresh).
  */
 export async function getPrisma(): Promise<PrismaClient> {
   // Return cached client immediately on warm instances (no Blob I/O)
   if (globalForPrisma.prisma) return globalForPrisma.prisma;
 
-  // On Vercel cold start: only restore from Blob if local DB is missing/tiny
+  // No cached client = cold start. Always restore from Blob (if Vercel).
   if (process.env.VERCEL) {
-    const localOk = fs.existsSync(TMP_DB_PATH) && fs.statSync(TMP_DB_PATH).size > 1024;
-    if (!localOk) {
-      await restoreFromBlob();
-    } else {
-      console.log('[Prisma] Local DB exists (' + fs.statSync(TMP_DB_PATH).size + ' bytes), skipping Blob restore');
-    }
+    await restoreFromBlob();
   }
 
   const client = createPrismaClient();
