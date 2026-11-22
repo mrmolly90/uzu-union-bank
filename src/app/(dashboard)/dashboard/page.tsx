@@ -724,9 +724,9 @@ export default function DashboardPage() {
                   <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">Available Balance</p>
                   <div className="flex items-center gap-3">
                     <h2 className="text-3xl sm:text-4xl font-bold text-bybit-yellow tracking-tight">
-                      {showBalance ? `${getCurrencySymbol(activeAccount)}${convertCurrency(Number(primarySavings?.balance || 0), primarySavings?.currency || activeAccount, activeAccount).toLocaleString('en-US', {minimumFractionDigits:2})}` : '••••••'}
+                      {showBalance ? formatAmount(Number(primarySavings?.balance || 0), primarySavings?.currency || homeCurrency) : '••••••'}
                     </h2>
-                    {primarySavings?.currency !== activeAccount && (
+                    {primarySavings?.currency && primarySavings.currency !== (primarySavings?.currency || homeCurrency) && (
                       <span className="text-[9px] text-gray-500 font-mono bg-bybit-bg/50 px-2 py-0.5 rounded">
                         {getCurrencySymbol(primarySavings?.currency || '')}{Number(primarySavings?.balance || 0).toLocaleString('en-US', {minimumFractionDigits:0})} {primarySavings?.currency}
                       </span>
@@ -785,7 +785,7 @@ export default function DashboardPage() {
               <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
               <div className="relative flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400"><PiggyBank size={16} /></div>
-                <div><p className="text-[10px] text-gray-500">Savings</p><p className="text-sm font-bold text-bybit-yellow">{getCurrencySymbol(activeAccount)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p></div>
+                <div><p className="text-[10px] text-gray-500">Savings</p><p className="text-sm font-bold text-bybit-yellow">{getCurrencySymbol(primarySavings?.currency || homeCurrency)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p></div>
               </div>
             </Card>
             <Card className="p-4 cursor-pointer hover:border-bybit-yellow/50 transition-all relative overflow-hidden group" onClick={() => { setModalOpen('Crypto Wallet'); setActiveSidebar('Crypto Wallet'); }}>
@@ -909,8 +909,8 @@ export default function DashboardPage() {
                   <p className="text-[9px] text-gray-500 font-mono">{formatIbanShort(primarySavings?.accountNumber || '')}</p>
                 </div>
               </div>
-              <p className="text-lg font-bold text-bybit-yellow">{getCurrencySymbol(activeAccount)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
-              <p className="text-[9px] text-gray-500">{savingsAccounts.length} currency{savingsAccounts.length !== 1 ? 'ies' : ''} • {getCurrencySymbol(activeAccount)}{activeAccount}</p>
+              <p className="text-lg font-bold text-bybit-yellow">{getCurrencySymbol(primarySavings?.currency || homeCurrency)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
+              <p className="text-[9px] text-gray-500">{primarySavings?.currency || homeCurrency} Account</p>
             </div>
           </div>
 
@@ -1315,8 +1315,8 @@ export default function DashboardPage() {
                   </div>
                   {selectedAccountType === 'savings' && <Check size={14} className="text-emerald-400" />}
                 </div>
-                <p className="text-sm font-bold text-bybit-yellow">{getCurrencySymbol(activeAccount)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
-                <p className="text-[9px] text-gray-500">{savingsAccounts.length} currency{savingsAccounts.length !== 1 ? 'ies' : ''}</p>
+                <p className="text-sm font-bold text-bybit-yellow">{getCurrencySymbol(primarySavings?.currency || homeCurrency)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
+                <p className="text-[9px] text-gray-500">{primarySavings?.currency || homeCurrency} Account</p>
               </button>
             </div>
           </div>
@@ -1350,7 +1350,7 @@ export default function DashboardPage() {
                 <Info size={12} />
                 <span>Rate locked 30s • No hidden fees</span>
               </div>
-              <span className="text-gray-600">Available: <span className="text-white font-medium">{getCurrencySymbol(activeAccount)}{totalBalance.toLocaleString('en-US', {minimumFractionDigits:2})}</span></span>
+              <span className="text-gray-600">Available: <span className="text-white font-medium">{getCurrencySymbol(homeCurrency)}{totalBalance.toLocaleString('en-US', {minimumFractionDigits:2})}</span></span>
             </div>
           </div>
 
