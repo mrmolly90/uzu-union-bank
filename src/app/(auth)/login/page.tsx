@@ -36,12 +36,16 @@ function LoginForm() {
   const [errors, setErrors] = useState<LoginErrors>({});
   const mountedRef = useRef(true);
 
-  // Only redirect if already authenticated AND store is hydrated
+  // Only redirect if already authenticated AND store is hydrated — prevents flash
   useEffect(() => {
     const { isAuthenticated, hydrated } = useAuthStore.getState();
-    if (isAuthenticated && hydrated) {
+    if (isAuthenticated && hydrated && mountedRef.current) {
       router.replace('/dashboard');
     }
+  }, [router]);
+
+  // Subscribe to auth changes
+  useEffect(() => {
     const unsub = useAuthStore.subscribe((state) => {
       if (state.isAuthenticated && state.hydrated && mountedRef.current) {
         router.replace('/dashboard');

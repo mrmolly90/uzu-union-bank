@@ -197,12 +197,18 @@ export default function DashboardPage() {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  // User's home currency from their country code
-  const homeCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
+  // User's home currency from their country code — only after hydration
+  const homeCurrency = hydrated && user ? getCurrencyByCountryCode(user.countryCode) : (user ? getCurrencyByCountryCode(user.countryCode) : 'USD');
 
-  // Each user has exactly 1 CHECKING + 1 SAVINGS in their home currency
-  const primaryChecking = accounts.find(a => a.accountType === 'CHECKING' || a.accountNumber?.includes('CHK'));
-  const primarySavings = accounts.find(a => a.accountType === 'SAVINGS' || a.accountNumber?.includes('SAV'));
+  // Find the user's home currency accounts — prefer home currency, fallback to any
+  const findHomeAccount = (type: string) => {
+    const byType = accounts.filter(a => a.accountType === type || a.accountNumber?.includes(type === 'CHECKING' ? 'CHK' : 'SAV'));
+    // Prefer the account in the user's home currency
+    const home = byType.find(a => a.currency === homeCurrency);
+    return home || byType[0] || null;
+  };
+  const primaryChecking = findHomeAccount('CHECKING');
+  const primarySavings = findHomeAccount('SAVINGS');
   const checkingAccounts = primaryChecking ? [primaryChecking] : [];
   const savingsAccounts = primarySavings ? [primarySavings] : [];
 
@@ -210,6 +216,9 @@ export default function DashboardPage() {
   const totalBalance = accounts.reduce((s, a) => s + convertCurrency(Number(a.balance), a.currency, homeCurrency), 0);
   const totalChecking = primaryChecking ? Number(primaryChecking.balance) : 0;
   const totalSavings = primarySavings ? Number(primarySavings.balance) : 0;
+
+  // Show loading state until hydration + accounts are ready — prevents USD flash
+  const ready = hydrated && !loading && accounts.length > 0;
 
   const filteredTransactions = showAllTransactions ? transactions : transactions.slice(0, 6);
 
@@ -357,8 +366,9 @@ export default function DashboardPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  if (!mounted) {
-    return <div className="min-h-screen bg-bybit-bg" />;
+  // Wait for hydration + data — prevents USD flash on reload
+  if (!mounted || !hydrated || loading) {
+    return <div className="min-h-screen bg-bybit-bg flex items-center justify-center"><div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" /></div>;
   }
 
   return (

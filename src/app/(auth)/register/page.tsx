@@ -3,14 +3,15 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { useApi } from '@/hooks/useAuth';
-import { ArrowLeft, Shield, Sparkles, Wallet, KeyRound, Lock } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Shield, Sparkles, Wallet, KeyRound, Lock, CheckCircle2 } from 'lucide-react';
 import { COUNTRIES } from '@/lib/countries';
 
 export default function RegisterPage() {
-  const { register } = useApi();
+  const router = useRouter();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [registered, setRegistered] = useState(false);
   const [form, setForm] = useState({
     email: '', password: '', confirmPassword: '',
     fullName: '', countryCode: '', phone: '', dob: '',
@@ -53,18 +54,28 @@ export default function RegisterPage() {
     if (!validateStep(3)) return;
     setLoading(true);
     try {
-      await register({
-        email: form.email,
-        password: form.password,
-        bankPin: form.bankPin,
-        fullName: form.fullName,
-        countryCode: form.countryCode,
-        phone: form.phone,
-        dob: form.dob,
-        address: form.address,
-        occupation: form.occupation,
-        idNumber: form.idNumber,
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+          bankPin: form.bankPin,
+          fullName: form.fullName,
+          countryCode: form.countryCode,
+          phone: form.phone,
+          dob: form.dob,
+          address: form.address,
+          occupation: form.occupation,
+          idNumber: form.idNumber,
+        }),
       });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Registration failed');
+      }
+      setRegistered(true);
+      setTimeout(() => router.push('/login'), 2000);
     } catch (err: any) {
       setErrors({ submit: err.message });
     } finally {
@@ -82,6 +93,25 @@ export default function RegisterPage() {
     if (/[^A-Za-z0-9]/.test(form.password)) s++;
     return Math.min(s, 4);
   };
+
+  // ─── Success State ───────────────────────────────────────────
+  if (registered) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-uzu-950 p-4">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 rounded-full bg-emerald-500/10 border-2 border-emerald-500/30 flex items-center justify-center mx-auto mb-6">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+              <CheckCircle2 size={40} className="text-emerald-400" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Account Created!</h1>
+          <p className="text-sm text-gray-400 mb-6">Your UZU UNION account is ready. Sign in to start banking.</p>
+          <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-xs text-gray-500">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex">
