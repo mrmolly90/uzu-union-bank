@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 
       // Create transaction record — use customer ID for FK integrity
       // (initiatedBy references User model, not Admin model)
-      return db.transaction.create({
+      const transaction = await db.transaction.create({
         data: {
           sourceAccountId: account.id,
           destinationBankSwift: 'UZUADMIN',
@@ -110,18 +110,19 @@ export async function POST(req: NextRequest) {
           initiatedById: userId,
         },
       });
-    });
 
-    // Notification with the exact amount (cents preserved) and real currency.
-    const exactAmount = formatExactAmount(numericAmount, effectiveCurrency);
+      // Create notification inside the same transaction for atomicity
+      const exactAmount = formatExactAmount(numericAmount, effectiveCurrency);
+      await db.notification.create({
+        data: {
+          userId,
+          title: type === 'credit' ? 'Income Deposit' : 'Debit Processed',
+          message: `${type === 'credit' ? '+' : '-'}${exactAmount} - ${description || 'Admin transaction'} (${targetType === 'SAVINGS' ? 'Savings' : 'Checking'})`,
+          type: type === 'credit' ? 'CREDIT' : 'DEBIT',
+        },
+      });
 
-    await prisma.notification.create({
-      data: {
-        userId,
-        title: type === 'credit' ? 'Income Deposit' : 'Debit Processed',
-        message: `${type === 'credit' ? '+' : '-'}${exactAmount} - ${description || 'Admin transaction'} (${targetType === 'SAVINGS' ? 'Savings' : 'Checking'})`,
-        type: type === 'credit' ? 'CREDIT' : 'DEBIT',
-      },
+      return transaction;
     });
 
     // Persist DB to Blob so funded data survives cold starts

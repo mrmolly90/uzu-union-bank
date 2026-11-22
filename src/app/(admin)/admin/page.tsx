@@ -213,13 +213,17 @@ export default function AdminPanelPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...txForm, amount: parseFloat(txForm.amount), accountType: txForm.accountType }),
       });
-      if (!res.ok) throw new Error('Failed');
-      setTxSuccess(`$${parseFloat(txForm.amount).toLocaleString()} ${txForm.type === 'credit' ? 'credited to' : 'debited from'} ${selectedUser?.fullName}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Transaction failed');
+      setTxSuccess(`${txForm.type === 'credit' ? 'Credited' : 'Debited'} ${parseFloat(txForm.amount).toLocaleString()} ${txForm.currency} to ${selectedUser?.fullName}`);
       setTxForm({ ...txForm, amount: '', description: '' });
-      fetchUsers(token);
-      fetchTransactions(token);
-    } catch { setTxSuccess('Transaction failed'); }
-    finally { setTxLoading(false); }
+      await Promise.all([fetchUsers(token), fetchTransactions(token)]);
+    } catch (err: any) {
+      setTxSuccess(`❌ ${err.message}`);
+      setTimeout(() => setTxSuccess(''), 5000);
+    } finally {
+      setTxLoading(false);
+    }
   };
 
   const handleStatusChange = async (transactionId: string, newStatus: string, failureReason?: string) => {

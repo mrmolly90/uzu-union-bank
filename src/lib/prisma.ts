@@ -143,6 +143,8 @@ function copyBuildDbToTmp(): void {
 /**
  * Persist the current /tmp/ DB back to Vercel Blob.
  * Call this after every write operation (register, fund, transfer, etc.).
+ * THROWS on failure so callers can surface the error — silent failures
+ * cause stale Blob overwrites on the next cold start (data loss).
  */
 export async function syncDbToBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
@@ -150,28 +152,22 @@ export async function syncDbToBlob(): Promise<void> {
   if (!blobToken) return;
   if (!fs.existsSync(TMP_DB_PATH)) return;
 
-  try {
-    const storeId = process.env.BLOB_STORE_ID;
-    if (!storeId) {
-      console.error('[Prisma] BLOB_STORE_ID not set, cannot sync');
-      return;
-    }
-    const buffer = fs.readFileSync(TMP_DB_PATH);
-
-    // Use @vercel/blob SDK to upload the DB file with allowOverwrite
-    await put(BLOB_DB_KEY, buffer, {
-      access: 'private',
-      token: blobToken,
-      storeId,
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: 'application/octet-stream',
-    });
-
-    console.log('[Prisma] Synced DB to Blob (' + buffer.length + ' bytes)');
-  } catch (err) {
-    console.error('[Prisma] Failed to sync DB to Blob:', err instanceof Error ? err.message : String(err));
+  const storeId = process.env.BLOB_STORE_ID;
+  if (!storeId) {
+    throw new Error('BLOB_STORE_ID not set, cannot sync DB to Blob');
   }
+  const buffer = fs.readFileSync(TMP_DB_PATH);
+
+  await put(BLOB_DB_KEY, buffer, {
+    access: 'private',
+    token: blobToken,
+    storeId,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: 'application/octet-stream',
+  });
+
+  console.log('[Prisma] Synced DB to Blob (' + buffer.length + ' bytes)');
 }
 
 /**
@@ -308,16 +304,22 @@ function createPrismaClient(): PrismaClient {
 /**
  * Get the Prisma client singleton.
  * On warm instances, returns the cached client immediately — no I/O.
- * On cold start (or after resetPrisma), restores from Blob first,
- * then creates and caches a fresh client.
+ * On cold start, creates a fresh client using the local /tmp/ DB.
+ * Only restores from Blob if the local DB is missing or corrupt (< 1KB),
+ * preventing stale Blob overwrites of fresh local data.
  */
 export async function getPrisma(): Promise<PrismaClient> {
   // Return cached client immediately on warm instances (no Blob I/O)
   if (globalForPrisma.prisma) return globalForPrisma.prisma;
 
-  // No cached client — restore from Blob first (cold start or after write)
+  // On Vercel cold start: only restore from Blob if local DB is missing/tiny
   if (process.env.VERCEL) {
-    await restoreFromBlob();
+    const localOk = fs.existsSync(TMP_DB_PATH) && fs.statSync(TMP_DB_PATH).size > 1024;
+    if (!localOk) {
+      await restoreFromBlob();
+    } else {
+      console.log('[Prisma] Local DB exists (' + fs.statSync(TMP_DB_PATH).size + ' bytes), skipping Blob restore');
+    }
   }
 
   const client = createPrismaClient();
