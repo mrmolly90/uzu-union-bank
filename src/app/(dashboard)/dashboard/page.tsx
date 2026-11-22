@@ -94,10 +94,21 @@ export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showBalance, setShowBalance] = useState(true);
   const [activeAccount, setActiveAccount] = useState<string>(() => {
-    // Use the user's country currency as default, fallback to USD
+    // Read user from store at mount time — will be updated on hydration
     const { user } = useAuthStore.getState();
     return user ? getCurrencyByCountryCode(user.countryCode) : 'USD';
   });
+
+  // Keep activeAccount in sync with hydrated user's home currency (prevents USD flash)
+  useEffect(() => {
+    if (hydrated && user) {
+      const home = getCurrencyByCountryCode(user.countryCode);
+      setActiveAccount(prev => {
+        // Only update if current value is the stale USD default or doesn't match user's country
+        return (prev === 'USD' && home !== 'USD') || prev !== home ? home : prev;
+      });
+    }
+  }, [hydrated, user]);
   const [copied, setCopied] = useState<string | null>(null);
 
   // Data State
@@ -545,17 +556,14 @@ export default function DashboardPage() {
                     <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Total Balance</p>
                     <div className="flex items-center gap-2">
                       <span className="text-2xl sm:text-3xl font-extrabold text-white">
-                        {showBalance ? formatAmount(totalBalance, activeAccount) : '••••••'}
+                        {showBalance ? formatAmount(totalBalance, homeCurrency) : '••••••'}
                       </span>
                       <button onClick={() => setShowBalance(!showBalance)} className="p-1 rounded-lg text-gray-500 hover:text-bybit-yellow hover:bg-bybit-elevated transition-all">
                         {showBalance ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
                     </div>
                     <p className="text-[9px] text-gray-600 mt-0.5">
-                      {getCountryFlag(user?.countryCode || 'US')} {getCountryName(user?.countryCode || 'US')} • {getCurrencySymbol(activeAccount)}{activeAccount}
-                      {activeAccount !== (user ? getCurrencyByCountryCode(user.countryCode) : 'USD') && (
-                        <span className="text-bybit-yellow ml-1">• Display: {getCurrencySymbol(activeAccount)}{activeAccount}</span>
-                      )}
+                      {getCountryFlag(user?.countryCode || 'US')} {getCountryName(user?.countryCode || 'US')} • {getCurrencySymbol(homeCurrency)}{homeCurrency}
                     </p>
                   </div>
                 </div>
@@ -569,7 +577,7 @@ export default function DashboardPage() {
                     <span>{checkingAccounts.length} account{checkingAccounts.length !== 1 ? 's' : ''}</span>
                   </div>
                   <p className="mt-0.5 truncate text-sm font-semibold text-white">
-                    {showBalance ? formatAmount(totalChecking, activeAccount) : '••••••'}
+                    {showBalance ? formatAmount(totalChecking, homeCurrency) : '••••••'}
                   </p>
                 </div>
                 <div className="h-8 w-px bg-bybit-border/60" />
@@ -580,7 +588,7 @@ export default function DashboardPage() {
                     <span>{savingsAccounts.length} account{savingsAccounts.length !== 1 ? 's' : ''}</span>
                   </div>
                   <p className="mt-0.5 truncate text-sm font-semibold text-emerald-300">
-                    {showBalance ? formatAmount(totalSavings, activeAccount) : '••••••'}
+                    {showBalance ? formatAmount(totalSavings, homeCurrency) : '••••••'}
                   </p>
                 </div>
               </div>
@@ -629,7 +637,7 @@ export default function DashboardPage() {
                   <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">Available Balance</p>
                   <div className="flex items-center gap-3">
                     <h2 className="text-3xl sm:text-4xl font-bold text-white tracking-tight">
-                      {showBalance ? `${getCurrencySymbol(activeAccount)}${convertCurrency(Number(primaryChecking?.balance || 0), primaryChecking?.currency || activeAccount, activeAccount).toLocaleString('en-US', {minimumFractionDigits:2})}` : '••••••'}
+                      {showBalance ? formatAmount(Number(primaryChecking?.balance || 0), primaryChecking?.currency || homeCurrency) : '••••••'}
                     </h2>
                     {primaryChecking?.currency !== activeAccount && (
                       <span className="text-[9px] text-gray-500 font-mono bg-bybit-bg/50 px-2 py-0.5 rounded">
