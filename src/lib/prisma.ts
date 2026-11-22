@@ -337,13 +337,24 @@ export async function getPrisma(): Promise<PrismaClient> {
   }
 
   // Cold start or blob-triggered refresh — download from Blob
-  if (process.env.VERCEL) {
+  // Skip if local DB is valid (> 4KB). Blob is the fallback, not the source of truth.
+  // This prevents a corrupted Blob from overwriting a working local DB.
+  const localDbExists = fs.existsSync(TMP_DB_PATH);
+  const localDbValid = localDbExists && fs.statSync(TMP_DB_PATH).size > 4096;
+
+  if (process.env.VERCEL && !localDbValid) {
     try {
       await downloadFromBlob();
     } catch {
       // Blob unavailable — use seed DB
       copyBuildDbToTmp();
+      // Force seed the DB by syncing the seed to blob for next time
+      try { await syncDbToBlob(); } catch {}
     }
+  } else if (process.env.VERCEL && localDbValid) {
+    // Local DB is valid — keep it. This prevents corrupted Blob from overwriting.
+    // Blob is a cold-start backup, not a write-through cache.
+    // On each write, syncDbToBlob() will update the Blob for other instances.
   }
 
   const client = createPrismaClient();
