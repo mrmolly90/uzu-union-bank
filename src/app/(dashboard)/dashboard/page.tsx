@@ -65,7 +65,8 @@ const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', desc: 'Account overview & balances' },
   { icon: Wallet, label: 'Accounts', desc: 'Checking, Savings & Multi-currency' },
   { icon: Eye, label: 'Balances', desc: 'Verify checking & savings balances' },
-  { icon: ArrowLeftRight, label: 'Transfer', desc: 'International wire transfers' },
+  { icon: ArrowLeftRight, label: 'Domestic Transfer', desc: 'Between checking & savings', modal: 'DomesticTransfer' },
+  { icon: Send, label: 'Wire Transfer', desc: 'International SWIFT transfers', modal: 'Transfer' },
   { icon: Bitcoin, label: 'Crypto Wallet', desc: 'Digital asset portfolio' },
   { icon: Clock, label: 'History', desc: 'Transaction history & receipts' },
   { icon: FileText, label: 'Statements', desc: 'Account statements & reports' },
@@ -419,7 +420,7 @@ export default function DashboardPage() {
 
           <nav className="space-y-1 max-h-[calc(100vh-280px)] overflow-y-auto pr-1 scrollbar-thin">
             {sidebarItems.map((item) => (
-              <button key={item.label} onClick={() => { setActiveSidebar(item.label); setModalOpen(item.label); setSidebarOpen(false); }}
+              <button key={item.label} onClick={() => { setActiveSidebar(item.label); setModalOpen((item as any).modal || item.label); setSidebarOpen(false); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeSidebar === item.label ? 'bg-bybit-yellow/10 text-bybit-yellow border border-bybit-yellow/30 shadow-bybit-glow' : 'text-gray-400 hover:text-white hover:bg-bybit-elevated'}`}>
                 <item.icon size={18} />
                 <div className="text-left"><span>{item.label}</span><p className="text-[10px] text-gray-500 font-normal">{item.desc}</p></div>
@@ -1141,7 +1142,7 @@ export default function DashboardPage() {
                   <p className="text-xs font-bold text-white">Savings</p>
                   {domesticFrom === 'savings' && <Check size={12} className="text-emerald-400" />}
                 </div>
-                <p className="text-xs font-bold text-bybit-yellow">{getCurrencySymbol(activeAccount)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
+                <p className="text-xs font-bold text-bybit-yellow">{getCurrencySymbol(primarySavings?.currency || homeCurrency)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
               </button>
             </div>
           </div>
@@ -1173,7 +1174,7 @@ export default function DashboardPage() {
           <div className="space-y-2">
             <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Amount</label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">{getCurrencySymbol(activeAccount)}</span>
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">{getCurrencySymbol(domesticFrom === 'checking' ? (primaryChecking?.currency || homeCurrency) : (primarySavings?.currency || homeCurrency))}</span>
               <input
                 type="number"
                 value={domesticAmount}
