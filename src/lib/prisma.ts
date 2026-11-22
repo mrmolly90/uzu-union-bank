@@ -126,10 +126,10 @@ function createPrismaClient(): PrismaClient {
     });
   }
 
-  // Fallback to local SQLite with WAL mode via connection string
+  // Fallback to local SQLite
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-    datasources: { db: { url: resolveDatabaseUrl() + '&journal_mode=WAL' } },
+    datasources: { db: { url: resolveDatabaseUrl() } },
   });
 }
 
