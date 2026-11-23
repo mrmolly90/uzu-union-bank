@@ -110,6 +110,12 @@ export default function AdminPanelPage() {
     setToken(t);
     setAdmin(JSON.parse(a));
     fetchAllData(t);
+    // Auto-refresh snapshot every 15s so new users appear instantly
+    const interval = setInterval(() => {
+      const storedToken = localStorage.getItem('uzu-admin-token');
+      if (storedToken) fetchUsers(storedToken);
+    }, 15000);
+    return () => clearInterval(interval);
   }, [router]);
 
   const fetchAllData = async (t: string) => {
@@ -225,13 +231,6 @@ export default function AdminPanelPage() {
         if (snapRes.ok) {
           const snapData = await snapRes.json();
           if (snapData.snapshot) setSnapshotTime(snapData.snapshot.timestamp);
-        }
-        // Also trigger user snapshot for the affected user so their dashboard
-        // reflects the new balance immediately on next page visit
-        if (txForm.userId) {
-          await fetch('/api/snapshot', {
-            headers: { Authorization: `Bearer ${token}` },
-          }).catch(() => {});
         }
       } catch {}
       await Promise.all([fetchUsers(token), fetchTransactions(token)]);

@@ -25,10 +25,6 @@ export async function GET(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    // Force fresh Prisma client to ensure we read the latest DB state
-    await resetPrisma();
-    const prisma = await getPrisma();
-
     const snapshot = await takeAdminSnapshot();
 
     return NextResponse.json({
