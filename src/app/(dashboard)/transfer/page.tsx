@@ -63,16 +63,23 @@ export default function TransferPage() {
     if (tokens?.accessToken) {
       useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
         .then(snap => {
-          if (snap?.accounts) setAccounts(snap.accounts);
-          // Update fromCurrency to match user's actual account currency from snapshot
-          if (snap?.accounts && snap.accounts.length > 0) {
+          if (snap?.accounts) {
+            setAccounts(snap.accounts);
+            // Update fromCurrency to match user's actual account currency from snapshot
             const homeAcc = snap.accounts.find((a: any) => a.currency === userCurrency);
             if (homeAcc) {
               setForm(prev => ({ ...prev, fromCurrency: homeAcc.currency }));
             }
+            return; // Snapshot succeeded — no fallback needed
           }
+          // Snapshot returned no accounts — try fallback
+          fetchAccounts();
         })
-        .catch(err => console.warn('[Transfer] Snapshot fetch (non-fatal):', err));
+        .catch(err => {
+          console.warn('[Transfer] Snapshot fetch (non-fatal):', err);
+          // Snapshot failed — try fallback API
+          fetchAccounts();
+        });
     }
   }, [isAuthenticated, hydrated, router]);
 
@@ -102,12 +109,11 @@ export default function TransferPage() {
 
   if (!mounted || !isAuthenticated) return null;
 
-  // Account type is authoritative. New accounts carry plain 16-digit numbers
-  // with no CHK/SAV marker, so filtering on the string alone emptied both
-  // columns and broke the whole transfer flow. `includes` stays as a fallback
-  // for legacy rows still stored as UZU-CHK-…/UZU-SAV-….
-  const checkingAccounts = accounts.filter(a => a.accountType === 'CHECKING' || (a.accountNumber && a.accountNumber.includes('CHK')));
-  const savingsAccounts = accounts.filter(a => a.accountType === 'SAVINGS' || (a.accountNumber && a.accountNumber.includes('SAV')));
+  // Account type is authoritative. Use accountType field exclusively.
+  // New accounts from admin funding carry plain 16-digit numbers with no
+  // CHK/SAV marker, so we ONLY filter by accountType.
+  const checkingAccounts = accounts.filter(a => a.accountType === 'CHECKING');
+  const savingsAccounts = accounts.filter(a => a.accountType === 'SAVINGS');
   const totalChecking = checkingAccounts.reduce((s, a) => s + Number(a.balance), 0);
   const totalSavings = savingsAccounts.reduce((s, a) => s + Number(a.balance), 0);
   const primaryChecking = checkingAccounts.find(a => a.currency === form.fromCurrency) || checkingAccounts[0];

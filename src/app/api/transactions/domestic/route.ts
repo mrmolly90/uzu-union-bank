@@ -3,6 +3,7 @@ import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
+import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { takeUserSnapshot } from '@/lib/dbSnapshot';
 
 export async function POST(req: NextRequest) {
@@ -25,21 +26,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid transfer details.' }, { status: 400 });
     }
 
-    // Verify both accounts belong to the user
+    // Verify source account belongs to the user
     const sourceAccount = await prisma.account.findFirst({
       where: { id: sourceAccountId, userId: decoded.sub },
     });
 
-    const destAccount = await prisma.account.findFirst({
-      where: { id: destinationAccountId, userId: decoded.sub },
-    });
-
-    if (!sourceAccount || !destAccount) {
-      return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
+    if (!sourceAccount) {
+      return NextResponse.json({ error: 'Source account not found.' }, { status: 404 });
     }
 
     if (Number(sourceAccount.balance) < amount) {
       return NextResponse.json({ error: 'Insufficient funds.' }, { status: 400 });
+    }
+
+    // Find or auto-create destination account (new users may only have one account type)
+    let destAccount = await prisma.account.findFirst({
+      where: { id: destinationAccountId, userId: decoded.sub },
+    });
+
+    if (!destAccount) {
+      // Destination account doesn't exist — auto-create it with same currency
+      const targetType = sourceAccount.accountType === 'CHECKING' ? 'SAVINGS' : 'CHECKING';
+      destAccount = await prisma.account.create({
+        data: {
+          userId: decoded.sub,
+          currency: sourceAccount.currency,
+          accountNumber: generate16DigitAccountNumber(),
+          balance: 0,
+          accountType: targetType,
+          isActive: true,
+        },
+      });
     }
 
     // Execute domestic transfer in a transaction (double-entry bookkeeping)
@@ -52,7 +69,7 @@ export async function POST(req: NextRequest) {
 
       // Credit destination
       await db.account.update({
-        where: { id: destinationAccountId },
+        where: { id: destAccount.id },
         data: { balance: { increment: amount } },
       });
 
@@ -70,7 +87,7 @@ export async function POST(req: NextRequest) {
           status: 'SETTLED',
           blockchainTxHash: generateTxHash(),
           initiatedById: decoded.sub,
-          destinationAccountId,
+          destinationAccountId: destAccount.id,
         },
       });
 

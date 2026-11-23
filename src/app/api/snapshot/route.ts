@@ -6,6 +6,23 @@ import { takeUserSnapshot, verifySnapshot } from '@/lib/dbSnapshot';
 export const dynamic = 'force-dynamic';
 
 /**
+ * Retry a function up to `maxRetries` times with exponential backoff.
+ * Used to handle cold-start DB restore races on serverless.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries - 1) throw err;
+      console.error(`[Snapshot] Retry ${attempt + 1}/${maxRetries} failed:`, err instanceof Error ? err.message : String(err));
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  throw new Error('All retries exhausted');
+}
+
+/**
  * GET /api/snapshot
  * Returns a verified DB snapshot of the authenticated user's data.
  * This is the "unsnapshot" mechanism — it bypasses all cached state
@@ -23,14 +40,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token.' }, { status: 401 });
     }
 
-    const prisma = await getPrisma();
-    const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
-    if (!user) {
-      return NextResponse.json({ error: 'User not found.' }, { status: 404 });
-    }
+    // Use retry to handle cold-start DB restore timing
+    const snapshot = await withRetry(async () => {
+      const prisma = await getPrisma();
+      const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
+      if (!user) {
+        throw new Error('User not found in database');
+      }
 
-    // Take a fresh snapshot from the DB
-    const snapshot = await takeUserSnapshot(decoded.sub, user.countryCode);
+      // Take a fresh snapshot from the DB
+      return await takeUserSnapshot(decoded.sub, user.countryCode);
+    });
 
     return NextResponse.json({
       success: true,

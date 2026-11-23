@@ -85,6 +85,11 @@ export default function AdminPanelPage() {
   // Snapshot verification timestamp
   const [snapshotTime, setSnapshotTime] = useState<string>('');
 
+  // Crypto Deposit Approval State
+  const [cryptoDeposits, setCryptoDeposits] = useState<any[]>([]);
+  const [cryptoDepositLoading, setCryptoDepositLoading] = useState(false);
+  const [cryptoDepositActionLoading, setCryptoDepositActionLoading] = useState<string | null>(null);
+
   const CRYPTO_PRESETS = [
     { symbol: 'BTC', name: 'Bitcoin', network: 'Bitcoin', minDeposit: '0.001 BTC' },
     { symbol: 'ETH', name: 'Ethereum', network: 'Ethereum (ERC-20)', minDeposit: '0.01 ETH' },
@@ -126,6 +131,7 @@ export default function AdminPanelPage() {
       fetchUsers(t),
       fetchTransactions(t),
       fetchCryptoAddresses(t),
+      fetchCryptoDeposits(t),
     ]);
   };
 
@@ -187,6 +193,38 @@ export default function AdminPanelPage() {
         setCryptoAddresses(data);
       }
     } catch {}
+  };
+
+  const fetchCryptoDeposits = async (t: string) => {
+    try {
+      const res = await fetch('/api/admin/crypto/deposits', { headers: { Authorization: `Bearer ${t}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setCryptoDeposits(data);
+      }
+    } catch {}
+  };
+
+  const handleCryptoDepositAction = async (depositId: string, action: string) => {
+    if (!token) return;
+    setCryptoDepositActionLoading(depositId);
+    try {
+      const res = await fetch('/api/admin/crypto/deposits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ depositId, action }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Action failed');
+      }
+      // Refresh deposits and users (balance may have changed on approval)
+      await Promise.all([fetchCryptoDeposits(token), fetchUsers(token), fetchTransactions(token)]);
+    } catch (err: any) {
+      alert(err.message || 'Action failed');
+    } finally {
+      setCryptoDepositActionLoading(null);
+    }
   };
 
   const handleSnapshotRefresh = async () => {
@@ -524,7 +562,8 @@ export default function AdminPanelPage() {
             { id: 'funds', label: 'Fund Control', icon: DollarSign },
             { id: 'transactions', label: 'Transactions', icon: Clock },
             { id: 'accounts', label: 'Accounts', icon: Building2 },
-            { id: 'crypto', label: 'Crypto Control', icon: Bitcoin },
+            { id: 'deposits', label: 'Crypto Deposits', icon: Bitcoin },
+            { id: 'crypto', label: 'Crypto Control', icon: ExternalLink },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'}`}>
@@ -894,6 +933,88 @@ export default function AdminPanelPage() {
                     {filteredUsers.length === 0 && (
                       <tr><td colSpan={6} className="p-8 text-center text-sm text-slate-500">No users found</td></tr>
                     )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Crypto Deposits Tab */}
+        {activeTab === 'deposits' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Bitcoin size={16} className="text-amber-400" />
+                Crypto Deposit Requests
+              </h3>
+              <span className="text-xs text-slate-400">{cryptoDeposits.filter(d => d.status === 'PENDING').length} pending</span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-slate-700 text-slate-400 text-[10px] uppercase tracking-wider">
+                    <th className="text-left p-3">User</th>
+                    <th className="text-left p-3">Asset</th>
+                    <th className="text-right p-3">Amount</th>
+                    <th className="text-left p-3">TX Hash</th>
+                    <th className="text-center p-3">Status</th>
+                    <th className="text-center p-3">Date</th>
+                    <th className="text-center p-3">Actions</th>
+                  </tr></thead>
+                  <tbody>
+                    {cryptoDeposits.length === 0 ? (
+                      <tr><td colSpan={7} className="p-8 text-center text-sm text-slate-500">No crypto deposit requests yet</td></tr>
+                    ) : cryptoDeposits.map(d => (
+                      <tr key={d.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">{d.user?.fullName?.charAt(0) || '?'}</div>
+                            <div>
+                              <p className="text-xs text-white font-medium">{d.user?.fullName || 'Unknown'}</p>
+                              <p className="text-[9px] text-slate-500">{d.user?.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <span className="text-xs font-bold text-amber-400">{d.symbol}</span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <span className="text-xs font-semibold text-white">{d.amount} {d.symbol}</span>
+                        </td>
+                        <td className="p-3">
+                          <code className="text-[9px] font-mono text-slate-400">{d.blockchainTxHash?.slice(0, 20)}...</code>
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                            d.status === 'PENDING' ? 'bg-amber-500/10 text-amber-400' :
+                            d.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' :
+                            'bg-red-500/10 text-red-400'
+                          }`}>{d.status}</span>
+                        </td>
+                        <td className="p-3 text-center text-[10px] text-slate-400">
+                          {new Date(d.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="p-3 text-center">
+                          {d.status === 'PENDING' ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => handleCryptoDepositAction(d.id, 'APPROVED')} disabled={cryptoDepositActionLoading === d.id}
+                                className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-[9px] font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50 flex items-center gap-1">
+                                {cryptoDepositActionLoading === d.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                                Approve
+                              </button>
+                              <button onClick={() => handleCryptoDepositAction(d.id, 'REJECTED')} disabled={cryptoDepositActionLoading === d.id}
+                                className="px-2 py-1 rounded bg-red-500/10 text-red-400 text-[9px] font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50 flex items-center gap-1">
+                                {cryptoDepositActionLoading === d.id ? <Loader2 size={10} className="animate-spin" /> : <Ban size={10} />}
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-500">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

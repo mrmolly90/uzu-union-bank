@@ -71,6 +71,15 @@ export interface DbSnapshot {
     minDeposit: string;
     isActive: boolean;
   }>;
+  /** User's crypto deposit requests — live from DB */
+  cryptoDeposits: Array<{
+    id: string;
+    symbol: string;
+    amount: string;
+    blockchainTxHash: string;
+    status: string;
+    createdAt: string;
+  }>;
   /** Unread notifications count */
   unreadNotifications: number;
   /** Verification hash for data integrity */
@@ -92,8 +101,8 @@ export async function takeUserSnapshot(userId: string, homeCurrency?: string): P
   const prisma = await getPrisma();
   const timestamp = new Date().toISOString();
 
-  // Fetch all user data in parallel — including crypto addresses and full tx history
-  const [user, accounts, recentTransactions, unreadCount, cryptoAddresses] = await Promise.all([
+  // Fetch all user data in parallel — including crypto addresses, deposits, and full tx history
+  const [user, accounts, recentTransactions, unreadCount, cryptoAddresses, cryptoDeposits] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -123,6 +132,11 @@ export async function takeUserSnapshot(userId: string, homeCurrency?: string): P
     prisma.cryptoAddress.findMany({
       where: { isActive: true },
       orderBy: { symbol: 'asc' },
+    }),
+    prisma.cryptoDeposit.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
     }),
   ]);
 
@@ -202,6 +216,14 @@ export async function takeUserSnapshot(userId: string, homeCurrency?: string): P
       address: c.address,
       minDeposit: c.minDeposit,
       isActive: c.isActive,
+    })),
+    cryptoDeposits: cryptoDeposits.map(d => ({
+      id: d.id,
+      symbol: d.symbol,
+      amount: d.amount,
+      blockchainTxHash: d.blockchainTxHash,
+      status: d.status,
+      createdAt: d.createdAt.toISOString(),
     })),
     unreadNotifications: unreadCount,
     verificationHash,

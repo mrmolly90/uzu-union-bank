@@ -25,7 +25,7 @@ import {
   Phone, Mail, MessageCircle, MapPin, Receipt,
   Home, CreditCard as CreditCardIcon, BookOpen,
   Briefcase, TrendingUp as TrendingUpIcon,
-  Sparkles, Zap, Activity, ArrowLeft, Info, CheckCircle2,
+  Sparkles, Zap, Activity, ArrowLeft, Info, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -141,6 +141,15 @@ export default function DashboardPage() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [receiptTx, setReceiptTx] = useState<TransactionRecord | null>(null);
 
+  // Crypto Deposit State
+  const [cryptoDepositStep, setCryptoDepositStep] = useState<'address' | 'complete' | 'receipt'>('address');
+  const [cryptoDepositAmount, setCryptoDepositAmount] = useState('');
+  const [cryptoDepositTxHash, setCryptoDepositTxHash] = useState('');
+  const [cryptoDepositLoading, setCryptoDepositLoading] = useState(false);
+  const [cryptoDepositError, setCryptoDepositError] = useState('');
+  const [cryptoDepositReceipt, setCryptoDepositReceipt] = useState<any>(null);
+  const [cryptoDeposits, setCryptoDeposits] = useState<any[]>([]);
+
   // ─── Fetch Data ───────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
@@ -242,8 +251,9 @@ export default function DashboardPage() {
   const homeCurrency = hydrated && user ? getCurrencyByCountryCode(user.countryCode) : (user ? getCurrencyByCountryCode(user.countryCode) : 'USD');
 
   // Find the user's home currency accounts — prefer home currency, fallback to any
+  // Use accountType field exclusively (new accounts have plain 16-digit numbers)
   const findHomeAccount = (type: string) => {
-    const byType = accounts.filter(a => a.accountType === type || a.accountNumber?.includes(type === 'CHECKING' ? 'CHK' : 'SAV'));
+    const byType = accounts.filter(a => a.accountType === type);
     // Prefer the account in the user's home currency
     const home = byType.find(a => a.currency === homeCurrency);
     return home || byType[0] || null;
@@ -357,18 +367,18 @@ export default function DashboardPage() {
       const { tokens } = useAuthStore.getState();
       if (!tokens?.accessToken) throw new Error('Not authenticated');
 
-      // Use snapshot accounts for verified balances — find matching currency accounts
-      const fromAccounts = domesticFrom === 'checking' ? checkingAccounts : savingsAccounts;
-      const toType = domesticFrom === 'checking' ? 'SAVINGS' : 'CHECKING';
-      const toAccounts = domesticFrom === 'checking' ? savingsAccounts : checkingAccounts;
+      // Use the FULL accounts array (not filtered checkingAccounts/savingsAccounts)
+      // to find accounts matching the selected type and home currency
+      const homeCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
+      const fromAccounts = accounts.filter(a => a.accountType === (domesticFrom === 'checking' ? 'CHECKING' : 'SAVINGS'));
+      const toAccounts = accounts.filter(a => a.accountType === (domesticFrom === 'checking' ? 'SAVINGS' : 'CHECKING'));
 
       // Find accounts matching user's home currency first
-      const homeCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
       const sourceAccount = fromAccounts.find(a => a.currency === homeCurrency) || fromAccounts[0];
       const destAccount = toAccounts.find(a => a.currency === homeCurrency) || toAccounts[0];
 
-      if (!sourceAccount || !destAccount) throw new Error('Account not found');
-      if (Number(sourceAccount.balance) < parseFloat(domesticAmount)) throw new Error('Insufficient funds');
+      if (!sourceAccount || !destAccount) throw new Error('Account not found. Make sure you have both Checking and Savings accounts.');
+      if (Number(sourceAccount.balance) < parseFloat(domesticAmount)) throw new Error('Insufficient funds in your ' + (domesticFrom === 'checking' ? 'Checking' : 'Savings') + ' account.');
 
       const res = await fetch('/api/transactions/domestic', {
         method: 'POST',
@@ -390,7 +400,7 @@ export default function DashboardPage() {
 
       const data = await res.json();
 
-      setDomesticSuccess(`Successfully transferred $${parseFloat(domesticAmount).toLocaleString()} from ${domesticFrom === 'checking' ? 'Checking' : 'Savings'} to ${domesticFrom === 'checking' ? 'Savings' : 'Checking'}`);
+      setDomesticSuccess(`Successfully transferred ${getCurrencySymbol(homeCurrency)}${parseFloat(domesticAmount).toLocaleString()} from ${domesticFrom === 'checking' ? 'Checking' : 'Savings'} to ${domesticFrom === 'checking' ? 'Savings' : 'Checking'}`);
       setDomesticAmount('');
       // Use inline snapshot data from mutation response — updates balance in milliseconds
       if (data.snapshot?.accounts) setAccounts(data.snapshot.accounts);
@@ -1221,9 +1231,9 @@ export default function DashboardPage() {
 
           {/* Amount */}
           <div className="space-y-2">
-            <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Amount</label>
+            <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Amount ({homeCurrency})</label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">{getCurrencySymbol(domesticFrom === 'checking' ? (primaryChecking?.currency || homeCurrency) : (primarySavings?.currency || homeCurrency))}</span>
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">{getCurrencySymbol(homeCurrency)}</span>
               <input
                 type="number"
                 value={domesticAmount}
@@ -1243,7 +1253,7 @@ export default function DashboardPage() {
             {domesticLoading ? (
               <><div className="w-4 h-4 border-2 border-bybit-bg border-t-transparent rounded-full animate-spin" /> Processing…</>
             ) : (
-              <><Send size={16} /> Transfer ${parseFloat(domesticAmount || '0').toLocaleString()} to {domesticFrom === 'checking' ? 'Savings' : 'Checking'}</>
+              <><Send size={16} /> Transfer {getCurrencySymbol(homeCurrency)}{parseFloat(domesticAmount || '0').toLocaleString()} to {domesticFrom === 'checking' ? 'Savings' : 'Checking'}</>
             )}
           </button>
 
@@ -1420,7 +1430,7 @@ export default function DashboardPage() {
       </Modal>
 
       {/* ─── Crypto Deposit Modal — Professional with Real Market Price ─── */}
-      <Modal open={modalOpen === 'CryptoDeposit'} onClose={() => setModalOpen(null)} title={`Deposit ${selectedCrypto?.symbol || ''}`} className="max-w-lg">
+      <Modal open={modalOpen === 'CryptoDeposit'} onClose={() => { setModalOpen(null); setCryptoDepositStep('address'); setCryptoDepositAmount(''); setCryptoDepositTxHash(''); setCryptoDepositError(''); }} title={`Deposit ${selectedCrypto?.symbol || ''}`} className="max-w-lg">
         {selectedCrypto && (() => {
           // Use snapshot crypto addresses for live DB reflection when admin adds/changes them
           const snapshotAddresses = snapshot?.cryptoAddresses || [];
@@ -1433,10 +1443,10 @@ export default function DashboardPage() {
           <div className="space-y-5">
             {/* Return Arrow */}
             <div className="flex items-center justify-between">
-              <button onClick={() => setModalOpen('Crypto Wallet')} className="flex items-center gap-2 text-sm text-gray-400 hover:text-bybit-yellow transition-colors">
+              <button onClick={() => { setModalOpen('Crypto Wallet'); setCryptoDepositStep('address'); setCryptoDepositAmount(''); setCryptoDepositTxHash(''); setCryptoDepositError(''); }} className="flex items-center gap-2 text-sm text-gray-400 hover:text-bybit-yellow transition-colors">
                 <ArrowLeft size={16} /> Back to Wallet
               </button>
-              <button onClick={() => { setModalOpen(null); setActiveSidebar('Dashboard'); }} className="p-2 rounded-lg bg-bybit-elevated border border-bybit-border text-gray-400 hover:text-bybit-yellow transition-all">
+              <button onClick={() => { setModalOpen(null); setActiveSidebar('Dashboard'); setCryptoDepositStep('address'); setCryptoDepositAmount(''); setCryptoDepositTxHash(''); setCryptoDepositError(''); }} className="p-2 rounded-lg bg-bybit-elevated border border-bybit-border text-gray-400 hover:text-bybit-yellow transition-all">
                 <ArrowLeft size={16} />
               </button>
             </div>
@@ -1471,75 +1481,249 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Deposit Address — from Admin-Managed API */}
-            <div className="p-4 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Deposit Address</p>
-                {addr && <Badge variant="confirmed">{addr.network}</Badge>}
-              </div>
-              {address ? (
-                <>
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-bybit-bg/60 border border-bybit-border/60">
-                    <code className="flex-1 text-xs font-mono text-white break-all">{address}</code>
-                    <button onClick={() => copyToClipboard(address, 'crypto-deposit')}
-                      className="p-2 rounded-lg bg-bybit-yellow/10 text-bybit-yellow hover:bg-bybit-yellow/20 transition-all shrink-0">
-                      {copied === 'crypto-deposit' ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 justify-center">
+              {['address', 'complete', 'receipt'].map((s, i) => (
+                <div key={s} className="flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold ${cryptoDepositStep === s ? 'bg-bybit-yellow text-bybit-bg' : i < ['address', 'complete', 'receipt'].indexOf(cryptoDepositStep) ? 'bg-emerald-500/20 text-emerald-400' : 'bg-bybit-elevated text-gray-500'}`}>
+                    {i < ['address', 'complete', 'receipt'].indexOf(cryptoDepositStep) ? <Check size={10} /> : i + 1}
+                  </div>
+                  <span className={`text-[9px] ${cryptoDepositStep === s ? 'text-bybit-yellow' : 'text-gray-500'}`}>{s === 'address' ? 'Address' : s === 'complete' ? 'Verify' : 'Receipt'}</span>
+                  {i < 2 && <div className={`w-6 h-0.5 ${i < ['address', 'complete', 'receipt'].indexOf(cryptoDepositStep) ? 'bg-emerald-500/50' : 'bg-bybit-border'}`} />}
+                </div>
+              ))}
+            </div>
+
+            {/* Step 1: Deposit Address */}
+            {cryptoDepositStep === 'address' && (
+              <>
+                {/* Deposit Address — from Admin-Managed API */}
+                <div className="p-4 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Deposit Address</p>
+                    {addr && <Badge variant="confirmed">{addr.network}</Badge>}
+                  </div>
+                  {address ? (
+                    <>
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-bybit-bg/60 border border-bybit-border/60">
+                        <code className="flex-1 text-xs font-mono text-white break-all">{address}</code>
+                        <button onClick={() => copyToClipboard(address, 'crypto-deposit')}
+                          className="p-2 rounded-lg bg-bybit-yellow/10 text-bybit-yellow hover:bg-bybit-yellow/20 transition-all shrink-0">
+                          {copied === 'crypto-deposit' ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
+                        </button>
+                      </div>
+                      {addr && <p className="text-[9px] text-gray-500 mt-1">Managed by UZU Admin • Updated {new Date(addr.updatedAt).toLocaleDateString()}</p>}
+                    </>
+                  ) : (
+                    <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20 text-center">
+                      <p className="text-xs text-amber-400">No deposit address configured yet</p>
+                      <p className="text-[9px] text-amber-300/60 mt-1">Contact support or check back later</p>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-gray-500 mt-2">Send only {selectedCrypto.symbol} to this address. Sending other tokens may result in permanent loss.</p>
+                </div>
+
+                {/* Deposit Info Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
+                    <p className="text-[10px] text-gray-500 uppercase">Network</p>
+                    <p className="text-sm font-semibold text-white mt-1">{addr?.network || (selectedCrypto.symbol === 'BTC' ? 'Bitcoin' : selectedCrypto.symbol === 'ETH' ? 'Ethereum' : selectedCrypto.symbol === 'SOL' ? 'Solana' : selectedCrypto.symbol === 'BNB' ? 'BSC' : 'Ethereum')}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
+                    <p className="text-[10px] text-gray-500 uppercase">Min Deposit</p>
+                    <p className="text-sm font-semibold text-white mt-1">{addr?.minDeposit || (selectedCrypto.symbol === 'BTC' ? '0.001 BTC' : selectedCrypto.symbol === 'ETH' ? '0.01 ETH' : selectedCrypto.symbol === 'SOL' ? '0.1 SOL' : selectedCrypto.symbol === 'BNB' ? '0.05 BNB' : '10 USDC')}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
+                    <p className="text-[10px] text-gray-500 uppercase">Est. Arrival</p>
+                    <p className="text-sm font-semibold text-emerald-400 mt-1">
+                      {selectedCrypto.symbol === 'BTC' ? '~30 min' : selectedCrypto.symbol === 'SOL' ? '~10 sec' : selectedCrypto.symbol === 'XRP' ? '~5 sec' : '~5 min'}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
+                    <p className="text-[10px] text-gray-500 uppercase">Fee</p>
+                    <p className="text-sm font-semibold text-white mt-1">Free (on-chain fees apply)</p>
+                  </div>
+                </div>
+
+                {/* Deposit to Account — Choose Checking or Savings */}
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Deposit to</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-start gap-2">
+                      <Wallet size={14} className="text-blue-400 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-[10px] font-semibold text-blue-300">Checking Account</p>
+                        <p className="text-[9px] text-blue-200/70 mt-0.5">Auto-converted to {getCurrencySymbol(activeAccount)}{activeAccount}</p>
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2">
+                      <PiggyBank size={14} className="text-emerald-400 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-[10px] font-semibold text-emerald-300">Savings Account</p>
+                        <p className="text-[9px] text-emerald-200/70 mt-0.5">Auto-converted to {getCurrencySymbol(activeAccount)}{activeAccount}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Complete Deposit Button — after user copies address and sends */}
+                {address && (
+                  <button onClick={() => setCryptoDepositStep('complete')}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-bybit-yellow text-bybit-bg font-bold text-sm hover:brightness-110 transition-all shadow-bybit-glow">
+                    <CheckCircle2 size={16} /> I've Sent the Deposit — Complete
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Step 2: Verify Deposit — user enters amount and tx hash */}
+            {cryptoDepositStep === 'complete' && (
+              <>
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold text-amber-300">Verify Your Deposit</p>
+                      <p className="text-[10px] text-amber-200/70 mt-1">Enter the amount you sent and the blockchain transaction hash to verify your deposit. Admin will review and credit your account.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Deposit Amount ({selectedCrypto.symbol})</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">{selectedCrypto.symbol}</span>
+                      <input
+                        type="number"
+                        value={cryptoDepositAmount}
+                        onChange={e => setCryptoDepositAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full pl-14 pr-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border text-white text-lg font-bold focus:outline-none focus:border-bybit-yellow"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Blockchain Transaction Hash</label>
+                    <input
+                      type="text"
+                      value={cryptoDepositTxHash}
+                      onChange={e => setCryptoDepositTxHash(e.target.value)}
+                      placeholder="0x... or txid..."
+                      className="w-full px-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border text-white text-sm font-mono focus:outline-none focus:border-bybit-yellow"
+                    />
+                    <p className="text-[9px] text-gray-600">Paste the transaction hash from your wallet or blockchain explorer</p>
+                  </div>
+
+                  {cryptoDepositError && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                      <p className="text-xs text-red-300">{cryptoDepositError}</p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button onClick={() => setCryptoDepositStep('address')}
+                      className="flex-1 px-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border text-gray-300 font-semibold text-sm hover:border-bybit-yellow/50 transition-all">
+                      Back
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!cryptoDepositAmount || parseFloat(cryptoDepositAmount) <= 0) {
+                          setCryptoDepositError('Please enter a valid deposit amount.');
+                          return;
+                        }
+                        if (!cryptoDepositTxHash || cryptoDepositTxHash.length < 10) {
+                          setCryptoDepositError('Please enter a valid transaction hash (at least 10 characters).');
+                          return;
+                        }
+                        setCryptoDepositLoading(true);
+                        setCryptoDepositError('');
+                        try {
+                          const { tokens } = useAuthStore.getState();
+                          if (!tokens?.accessToken) throw new Error('Not authenticated');
+                          const res = await fetch('/api/crypto/deposits', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.accessToken}` },
+                            body: JSON.stringify({
+                              symbol: selectedCrypto.symbol,
+                              amount: cryptoDepositAmount,
+                              blockchainTxHash: cryptoDepositTxHash,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error || 'Failed to submit deposit');
+                          setCryptoDepositReceipt(data.deposit);
+                          setCryptoDepositStep('receipt');
+                        } catch (err: any) {
+                          setCryptoDepositError(err.message || 'Failed to submit deposit');
+                        } finally {
+                          setCryptoDepositLoading(false);
+                        }
+                      }}
+                      disabled={cryptoDepositLoading || !cryptoDepositAmount || !cryptoDepositTxHash}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-bybit-yellow text-bybit-bg font-bold text-sm hover:brightness-110 transition-all disabled:opacity-50 shadow-bybit-glow"
+                    >
+                      {cryptoDepositLoading ? (
+                        <><div className="w-4 h-4 border-2 border-bybit-bg border-t-transparent rounded-full animate-spin" /> Submitting…</>
+                      ) : (
+                        <><CheckCircle2 size={16} /> Submit for Verification</>
+                      )}
                     </button>
                   </div>
-                  {addr && <p className="text-[9px] text-gray-500 mt-1">Managed by UZU Admin • Updated {new Date(addr.updatedAt).toLocaleDateString()}</p>}
-                </>
-              ) : (
-                <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20 text-center">
-                  <p className="text-xs text-amber-400">No deposit address configured yet</p>
-                  <p className="text-[9px] text-amber-300/60 mt-1">Contact support or check back later</p>
                 </div>
-              )}
-              <p className="text-[10px] text-gray-500 mt-2">Send only {selectedCrypto.symbol} to this address. Sending other tokens may result in permanent loss.</p>
-            </div>
+              </>
+            )}
 
-            {/* Deposit Info Grid */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
-                <p className="text-[10px] text-gray-500 uppercase">Network</p>
-                <p className="text-sm font-semibold text-white mt-1">{addr?.network || (selectedCrypto.symbol === 'BTC' ? 'Bitcoin' : selectedCrypto.symbol === 'ETH' ? 'Ethereum' : selectedCrypto.symbol === 'SOL' ? 'Solana' : selectedCrypto.symbol === 'BNB' ? 'BSC' : 'Ethereum')}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
-                <p className="text-[10px] text-gray-500 uppercase">Min Deposit</p>
-                <p className="text-sm font-semibold text-white mt-1">{addr?.minDeposit || (selectedCrypto.symbol === 'BTC' ? '0.001 BTC' : selectedCrypto.symbol === 'ETH' ? '0.01 ETH' : selectedCrypto.symbol === 'SOL' ? '0.1 SOL' : selectedCrypto.symbol === 'BNB' ? '0.05 BNB' : '10 USDC')}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
-                <p className="text-[10px] text-gray-500 uppercase">Est. Arrival</p>
-                <p className="text-sm font-semibold text-emerald-400 mt-1">
-                  {selectedCrypto.symbol === 'BTC' ? '~30 min' : selectedCrypto.symbol === 'SOL' ? '~10 sec' : selectedCrypto.symbol === 'XRP' ? '~5 sec' : '~5 min'}
-                </p>
-              </div>
-              <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
-                <p className="text-[10px] text-gray-500 uppercase">Fee</p>
-                <p className="text-sm font-semibold text-white mt-1">Free (on-chain fees apply)</p>
-              </div>
-            </div>
+            {/* Step 3: Deposit Receipt */}
+            {cryptoDepositStep === 'receipt' && cryptoDepositReceipt && (
+              <>
+                <div className="text-center">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 size={40} className="text-emerald-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-1">Deposit Submitted!</h3>
+                  <p className="text-sm text-gray-400">Your {cryptoDepositReceipt.symbol} deposit is pending admin verification.</p>
+                </div>
 
-            {/* Deposit to Account — Choose Checking or Savings */}
-            <div className="space-y-3">
-              <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Deposit to</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-start gap-2">
-                  <Wallet size={14} className="text-blue-400 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-[10px] font-semibold text-blue-300">Checking Account</p>
-                    <p className="text-[9px] text-blue-200/70 mt-0.5">Auto-converted to {getCurrencySymbol(activeAccount)}{activeAccount}</p>
+                <div className="bg-bybit-elevated/50 rounded-xl border border-bybit-border overflow-hidden">
+                  <div className="bg-gradient-to-r from-bybit-yellow/10 to-amber-500/10 p-4 border-b border-bybit-border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-gray-500 font-mono">UZU DIGITAL UNION</p>
+                        <p className="text-[10px] text-gray-600">Crypto Deposit Receipt</p>
+                      </div>
+                      <FileText size={24} className="text-bybit-yellow" />
+                    </div>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="flex justify-between text-sm"><span className="text-gray-500">Asset</span><span className="text-white font-bold">{cryptoDepositReceipt.symbol}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-500">Amount</span><span className="text-white font-bold">{cryptoDepositReceipt.amount} {cryptoDepositReceipt.symbol}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-500">Transaction Hash</span><span className="text-white font-mono text-[10px]">{cryptoDepositReceipt.blockchainTxHash.slice(0, 20)}...</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-500">Date</span><span className="text-white">{new Date(cryptoDepositReceipt.createdAt).toLocaleString()}</span></div>
+                    <div className="border-t border-bybit-border my-2" />
+                    <div className="flex justify-between text-sm"><span className="text-gray-500">Status</span><Badge variant="pending">Pending Verification</Badge></div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-500">Deposit ID</span><span className="text-white font-mono text-[10px]">{cryptoDepositReceipt.id.slice(0, 12)}</span></div>
                   </div>
                 </div>
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2">
-                  <PiggyBank size={14} className="text-emerald-400 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-[10px] font-semibold text-emerald-300">Savings Account</p>
-                    <p className="text-[9px] text-emerald-200/70 mt-0.5">Auto-converted to {getCurrencySymbol(activeAccount)}{activeAccount}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
 
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2">
+                  <Info size={14} className="text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-[10px] text-amber-300">Admin will review your deposit and credit your account once confirmed on the blockchain. This typically takes 10-30 minutes.</p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button onClick={() => { setModalOpen('Crypto Wallet'); setCryptoDepositStep('address'); setCryptoDepositAmount(''); setCryptoDepositTxHash(''); setCryptoDepositError(''); }}
+                    className="flex-1 px-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border text-gray-300 font-semibold text-sm hover:border-bybit-yellow/50 transition-all">
+                    Back to Wallet
+                  </button>
+                  <button onClick={() => { setModalOpen(null); setActiveSidebar('Dashboard'); setCryptoDepositStep('address'); setCryptoDepositAmount(''); setCryptoDepositTxHash(''); setCryptoDepositError(''); }}
+                    className="flex-1 px-4 py-3 rounded-xl bg-bybit-yellow text-bybit-bg font-bold text-sm hover:brightness-110 transition-all shadow-bybit-glow">
+                    Dashboard
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           );
         })()}

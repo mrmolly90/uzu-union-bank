@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { UserProfile, AuthTokens } from '@/types';
+import { useSnapshotStore } from './snapshot';
 
 interface AuthState {
   user: UserProfile | null;
@@ -26,8 +27,11 @@ export const useAuthStore = create<AuthState>()(
       setAuth: (user, tokens) =>
         set({ user, tokens, isAuthenticated: true }),
 
-      clearAuth: () =>
-        set({ user: null, tokens: null, isAuthenticated: false }),
+      clearAuth: () => {
+        // Also clear the snapshot store so stale data doesn't persist across logins
+        useSnapshotStore.getState().clearSnapshot();
+        set({ user: null, tokens: null, isAuthenticated: false });
+      },
 
       updateUser: (user) =>
         set({ user }),
