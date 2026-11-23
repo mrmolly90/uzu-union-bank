@@ -226,6 +226,14 @@ export default function DashboardPage() {
     if (!hydrated) return; // Wait for Zustand to hydrate from localStorage
     if (!isAuthenticated) { router.push('/login'); return; }
     fetchData();
+    // Auto-refresh snapshot every 30s so funding/debit reflects instantly
+    const interval = setInterval(() => {
+      const { tokens } = useAuthStore.getState();
+      if (tokens?.accessToken) {
+        useSnapshotStore.getState().fetchSnapshot(tokens.accessToken).catch(() => {});
+      }
+    }, 30000);
+    return () => clearInterval(interval);
   }, [isAuthenticated, hydrated, router, fetchData]);
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -349,12 +357,15 @@ export default function DashboardPage() {
       const { tokens } = useAuthStore.getState();
       if (!tokens?.accessToken) throw new Error('Not authenticated');
 
+      // Use snapshot accounts for verified balances — find matching currency accounts
       const fromAccounts = domesticFrom === 'checking' ? checkingAccounts : savingsAccounts;
       const toType = domesticFrom === 'checking' ? 'SAVINGS' : 'CHECKING';
       const toAccounts = domesticFrom === 'checking' ? savingsAccounts : checkingAccounts;
 
-      const sourceAccount = fromAccounts[0];
-      const destAccount = toAccounts[0];
+      // Find accounts matching user's home currency first
+      const homeCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
+      const sourceAccount = fromAccounts.find(a => a.currency === homeCurrency) || fromAccounts[0];
+      const destAccount = toAccounts.find(a => a.currency === homeCurrency) || toAccounts[0];
 
       if (!sourceAccount || !destAccount) throw new Error('Account not found');
       if (Number(sourceAccount.balance) < parseFloat(domesticAmount)) throw new Error('Insufficient funds');
@@ -1138,7 +1149,7 @@ export default function DashboardPage() {
         </div>
       </Modal>
 
-      {/* ─── Domestic Transfer Modal ─── */}
+      {/* ─── Domestic Transfer Modal — Uses snapshot for verified balances ─── */}
       <Modal open={modalOpen === 'DomesticTransfer'} onClose={() => setModalOpen(null)} title="Transfer Between Accounts" className="max-w-md">
         <div className="space-y-5">
           <div className="flex items-center justify-between">
@@ -1150,7 +1161,7 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          {/* From Account */}
+          {/* From Account — uses snapshot accounts for verified balances */}
           <div className="space-y-2">
             <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">From Account</label>
             <div className="grid grid-cols-2 gap-2">
@@ -1165,7 +1176,7 @@ export default function DashboardPage() {
                   <p className="text-xs font-bold text-white">Checking</p>
                   {domesticFrom === 'checking' && <Check size={12} className="text-blue-400" />}
                 </div>
-                <p className="text-xs font-bold text-white">{getCurrencySymbol(primaryChecking?.currency || homeCurrency)}{totalChecking.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
+                <p className="text-xs font-bold text-white">{getCurrencySymbol(primaryChecking?.currency || homeCurrency)}{Number(primaryChecking?.balance || 0).toLocaleString('en-US', {minimumFractionDigits:2})}</p>
               </button>
               <button
                 className={`p-3 rounded-xl border text-left transition-all ${domesticFrom === 'savings' ? 'bg-emerald-500/10 border-emerald-500/40 ring-1 ring-emerald-500/30' : 'bg-bybit-elevated/50 border-bybit-border hover:border-emerald-500/30'}`}
@@ -1344,7 +1355,11 @@ export default function DashboardPage() {
                 <Bitcoin size={32} className="text-gray-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">{cryptoPricesLoading ? 'Loading live market quotes…' : cryptoPricesError || 'No market quotes available.'}</p>
               </div>
-            ) : cryptoAssets.map(asset => (
+            ) : cryptoAssets.map(asset => {
+              // Check if snapshot has a deposit address for this asset
+              const snapAddresses = snapshot?.cryptoAddresses || [];
+              const hasAddress = snapAddresses.some((a: any) => a.symbol === asset.symbol);
+              return (
                 <div key={asset.id} onClick={() => { setSelectedCrypto(asset); setModalOpen('CryptoDeposit'); }}
                   className="flex items-center justify-between p-4 rounded-xl bg-bybit-elevated/50 border border-bybit-border hover:border-bybit-yellow/50 cursor-pointer transition-all group">
                   <div className="flex items-center gap-3">
@@ -1366,12 +1381,16 @@ export default function DashboardPage() {
                         <span className="text-[8px] text-gray-600">Cap {formatMarketValue(asset.marketCap, activeAccount)}</span>
                       </div>
                     </div>
-                    <div className="p-1.5 rounded-lg bg-bybit-yellow/10 text-bybit-yellow opacity-0 group-hover:opacity-100 transition-all">
-                      <Download size={14} />
+                    <div className="flex items-center gap-1">
+                      {hasAddress && <Badge variant="live">Deposit</Badge>}
+                      <div className="p-1.5 rounded-lg bg-bybit-yellow/10 text-bybit-yellow opacity-0 group-hover:opacity-100 transition-all">
+                        <Download size={14} />
+                      </div>
                     </div>
                   </div>
                 </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Crypto to Banking Transfer Box — Compact */}

@@ -64,6 +64,13 @@ export default function TransferPage() {
       useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
         .then(snap => {
           if (snap?.accounts) setAccounts(snap.accounts);
+          // Update fromCurrency to match user's actual account currency from snapshot
+          if (snap?.accounts && snap.accounts.length > 0) {
+            const homeAcc = snap.accounts.find((a: any) => a.currency === userCurrency);
+            if (homeAcc) {
+              setForm(prev => ({ ...prev, fromCurrency: homeAcc.currency }));
+            }
+          }
         })
         .catch(err => console.warn('[Transfer] Snapshot fetch (non-fatal):', err));
     }
