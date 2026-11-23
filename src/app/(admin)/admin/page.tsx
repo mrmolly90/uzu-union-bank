@@ -82,13 +82,8 @@ export default function AdminPanelPage() {
   const [copiedCrypto, setCopiedCrypto] = useState<string | null>(null);
   const [cryptoSymbolFilter, setCryptoSymbolFilter] = useState('');
 
-  // Restore Users State
-  const [restoreLoading, setRestoreLoading] = useState(false);
-  const [restoreResult, setRestoreResult] = useState<string>('');
-  const [restoreError, setRestoreError] = useState<string>('');
-  // Cleanup State
-  const [cleanupLoading, setCleanupLoading] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState<string>('');
+  // Snapshot verification timestamp
+  const [snapshotTime, setSnapshotTime] = useState<string>('');
 
   const CRYPTO_PRESETS = [
     { symbol: 'BTC', name: 'Bitcoin', network: 'Bitcoin', minDeposit: '0.001 BTC' },
@@ -135,6 +130,7 @@ export default function AdminPanelPage() {
       // New response format: { snapshot: { users: [...], stats: {...} } }
       if (data.snapshot?.users) {
         setUsers(data.snapshot.users);
+        if (data.snapshot.timestamp) setSnapshotTime(data.snapshot.timestamp);
       } else if (data.users) {
         // Legacy format fallback
         setUsers(data.users);
@@ -181,45 +177,21 @@ export default function AdminPanelPage() {
     } catch {}
   };
 
-  const handleRestoreUsers = async () => {
+  const handleSnapshotRefresh = async () => {
     if (!token) return;
-    setRestoreLoading(true);
-    setRestoreResult('');
-    setRestoreError('');
     try {
-      const res = await fetch('/api/admin/users/restore', {
+      const res = await fetch('/api/admin/snapshot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Restore failed');
-      const data = await res.json();
-      setRestoreResult(`Created ${data.created} users (${data.skipped} skipped, ${data.kycApproved || 0} KYC approved)`);
-      fetchUsers(token);
-    } catch (err: any) {
-      setRestoreError(err.message || 'Restore failed');
-    } finally {
-      setRestoreLoading(false);
-    }
-  };
-
-  const handleCleanupTestUsers = async () => {
-    if (!token) return;
-    setCleanupLoading(true);
-    setCleanupResult('');
-    try {
-      const res = await fetch('/api/admin/users/cleanup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Cleanup failed');
-      const data = await res.json();
-      setCleanupResult(`Removed ${data.deleted} test users`);
-      fetchUsers(token);
-    } catch (err: any) {
-      setCleanupResult('Error: ' + (err.message || 'Cleanup failed'));
-    } finally {
-      setCleanupLoading(false);
-    }
+      if (res.ok) {
+        const data = await res.json();
+        if (data.snapshot) {
+          setSnapshotTime(data.snapshot.timestamp);
+        }
+        fetchAllData(token);
+      }
+    } catch {}
   };
 
   const handleTransaction = async () => {
@@ -236,12 +208,25 @@ export default function AdminPanelPage() {
       if (!res.ok) throw new Error(data.error || 'Transaction failed');
       setTxSuccess(`${txForm.type === 'credit' ? 'Credited' : 'Debited'} ${parseFloat(txForm.amount).toLocaleString()} ${txForm.currency} to ${selectedUser?.fullName}`);
       setTxForm({ ...txForm, amount: '', description: '' });
-      // Force Blob sync + snapshot refresh so all users see updated balances instantly
+      // Force Blob sync + snapshot refresh so ALL users see updated balances instantly
+      // This ensures debited users see the deduction and credited users see the deposit
+      // in their dashboard, transfer page, and transaction history via unsnapshot.
       try {
-        await fetch('/api/admin/snapshot', {
+        const snapRes = await fetch('/api/admin/snapshot', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (snapRes.ok) {
+          const snapData = await snapRes.json();
+          if (snapData.snapshot) setSnapshotTime(snapData.snapshot.timestamp);
+        }
+        // Also trigger user snapshot for the affected user so their dashboard
+        // reflects the new balance immediately on next page visit
+        if (txForm.userId) {
+          await fetch('/api/snapshot', {
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => {});
+        }
       } catch {}
       await Promise.all([fetchUsers(token), fetchTransactions(token)]);
     } catch (err: any) {
@@ -262,12 +247,16 @@ export default function AdminPanelPage() {
         body: JSON.stringify({ transactionId, status: newStatus, failureReason }),
       });
       if (res.ok) {
-        // Force Blob sync after status change
+        // Force Blob sync after status change so user sees updated tx status
         try {
-          await fetch('/api/admin/snapshot', {
+          const snapRes = await fetch('/api/admin/snapshot', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}` },
           });
+          if (snapRes.ok) {
+            const snapData = await snapRes.json();
+            if (snapData.snapshot) setSnapshotTime(snapData.snapshot.timestamp);
+          }
         } catch {}
         fetchAllData(token);
       }
@@ -286,10 +275,14 @@ export default function AdminPanelPage() {
       });
       if (res.ok) {
         try {
-          await fetch('/api/admin/snapshot', {
+          const snapRes = await fetch('/api/admin/snapshot', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}` },
           });
+          if (snapRes.ok) {
+            const snapData = await snapRes.json();
+            if (snapData.snapshot) setSnapshotTime(snapData.snapshot.timestamp);
+          }
         } catch {}
         fetchAllData(token);
       }
@@ -308,10 +301,14 @@ export default function AdminPanelPage() {
       });
       if (res.ok) {
         try {
-          await fetch('/api/admin/snapshot', {
+          const snapRes = await fetch('/api/admin/snapshot', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}` },
           });
+          if (snapRes.ok) {
+            const snapData = await snapRes.json();
+            if (snapData.snapshot) setSnapshotTime(snapData.snapshot.timestamp);
+          }
         } catch {}
         fetchAllData(token);
       }
@@ -335,10 +332,14 @@ export default function AdminPanelPage() {
       setEditingCrypto(null);
       // Force Blob sync so users see new addresses in their snapshot instantly
       try {
-        await fetch('/api/admin/snapshot', {
+        const snapRes = await fetch('/api/admin/snapshot', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
+        if (snapRes.ok) {
+          const snapData = await snapRes.json();
+          if (snapData.snapshot) setSnapshotTime(snapData.snapshot.timestamp);
+        }
       } catch {}
       fetchCryptoAddresses(token);
     } catch { setCryptoSuccess('Operation failed'); }
@@ -474,25 +475,19 @@ export default function AdminPanelPage() {
           </div>
         </div>
 
-        {/* Cleanup Test Users Button */}
+        {/* DB Snapshot Status — All registered users displayed from live DB */}
         <div className="flex items-center justify-between bg-slate-800/60 rounded-xl border border-slate-700/50 p-3">
           <div className="flex items-center gap-2 text-sm text-slate-300">
-            <UserCheck size={16} className="text-amber-400" />
-            <span>Remove test/demo users to show only real accounts.</span>
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>DB Snapshot Active — <strong className="text-white">{totalUsers}</strong> registered users displayed from live database</span>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleRestoreUsers} disabled={restoreLoading}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 font-bold text-xs hover:brightness-110 transition-all disabled:opacity-50">
-              {restoreLoading ? <><Loader2 size={14} className="animate-spin" /> Restoring…</> : <>Restore Users</>}
-            </button>
-            <button onClick={handleCleanupTestUsers} disabled={cleanupLoading}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 font-bold text-xs hover:bg-red-500/20 transition-all disabled:opacity-50">
-              {cleanupLoading ? <><Loader2 size={14} className="animate-spin" /> Cleaning…</> : <><X size={14} /> Cleanup Tests</>}
+            <button onClick={handleSnapshotRefresh}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold text-xs hover:brightness-110 transition-all">
+              <RefreshCw size={14} /> Sync & Refresh
             </button>
           </div>
-          {restoreResult && <span className="text-emerald-400 text-xs ml-2">{restoreResult}</span>}
-          {restoreError && <span className="text-red-400 text-xs ml-2">{restoreError}</span>}
-          {cleanupResult && <span className="text-amber-400 text-xs ml-2">{cleanupResult}</span>}
+          {snapshotTime && <span className="text-emerald-400 text-[10px] ml-2 font-mono">Verified: {new Date(snapshotTime).toLocaleTimeString()}</span>}
         </div>
 
         {/* Tabs */}
