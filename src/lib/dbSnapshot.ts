@@ -214,6 +214,133 @@ export async function takeUserSnapshot(userId: string, homeCurrency?: string): P
 }
 
 /**
+ * AdminSnapshot — a system-wide view of all users with their accounts and balances.
+ * Used by the admin panel to display all registered users from the live DB.
+ * This is the "unsnapshot" mechanism for admin: reads directly from DB,
+ * bypassing any cached data, so new users appear instantly.
+ */
+export interface AdminSnapshot {
+  timestamp: string;
+  users: Array<{
+    id: string;
+    email: string;
+    fullName: string;
+    countryCode: string;
+    kycStatus: string;
+    transferPaused: boolean;
+    createdAt: string;
+    accounts: Array<{
+      id: string;
+      accountNumber: string;
+      accountType: string;
+      currency: string;
+      balance: number;
+      isActive: boolean;
+    }>;
+    totalBalance: number;
+    checkingBalance: number;
+    savingsBalance: number;
+    notificationCount: number;
+  }>;
+  stats: {
+    totalUsers: number;
+    totalBalance: number;
+    totalChecking: number;
+    totalSavings: number;
+    pendingTransactions: number;
+    settledTransactions: number;
+    verifiedKyc: number;
+  };
+  verificationHash: string;
+}
+
+/**
+ * Take a system-wide admin snapshot — ALL users with their accounts,
+ * balances, and stats. Reads directly from DB for instant verification.
+ * This ensures admin always sees every registered user.
+ */
+export async function takeAdminSnapshot(): Promise<AdminSnapshot> {
+  const prisma = await getPrisma();
+  const timestamp = new Date().toISOString();
+
+  // Fetch all users with accounts and notification counts in parallel
+  const [allUsers, pendingTxCount, settledTxCount] = await Promise.all([
+    prisma.user.findMany({
+      include: {
+        accounts: {
+          select: {
+            id: true, accountNumber: true, accountType: true,
+            currency: true, balance: true, isActive: true,
+          },
+        },
+        _count: { select: { notifications: { where: { read: false } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.transaction.count({
+      where: { status: { in: ['INITIATED', 'HASHED', 'MULTISIG_PENDING'] } },
+    }),
+    prisma.transaction.count({
+      where: { status: 'SETTLED' },
+    }),
+  ]);
+
+  const users = allUsers.map(u => {
+    const accounts = u.accounts.map(a => ({
+      id: a.id,
+      accountNumber: a.accountNumber,
+      accountType: a.accountType,
+      currency: a.currency,
+      balance: Number(a.balance),
+      isActive: a.isActive,
+    }));
+    const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
+    const checkingBalance = accounts
+      .filter(a => a.accountType === 'CHECKING')
+      .reduce((s, a) => s + a.balance, 0);
+    const savingsBalance = accounts
+      .filter(a => a.accountType === 'SAVINGS')
+      .reduce((s, a) => s + a.balance, 0);
+
+    return {
+      id: u.id,
+      email: u.email,
+      fullName: u.fullName,
+      countryCode: u.countryCode,
+      kycStatus: u.kycStatus,
+      transferPaused: u.transferPaused ?? false,
+      createdAt: u.createdAt.toISOString(),
+      accounts,
+      totalBalance,
+      checkingBalance,
+      savingsBalance,
+      notificationCount: u._count.notifications,
+    };
+  });
+
+  const stats = {
+    totalUsers: users.length,
+    totalBalance: users.reduce((s, u) => s + u.totalBalance, 0),
+    totalChecking: users.reduce((s, u) => s + u.checkingBalance, 0),
+    totalSavings: users.reduce((s, u) => s + u.savingsBalance, 0),
+    pendingTransactions: pendingTxCount,
+    settledTransactions: settledTxCount,
+    verifiedKyc: users.filter(u => u.kycStatus === 'VERIFIED').length,
+  };
+
+  // Generate verification hash
+  const { createHash } = await import('crypto');
+  const rawForHash = [
+    users.length,
+    users.map(u => `${u.id}:${u.totalBalance}`).join('|'),
+    timestamp,
+  ].join('::');
+  const verificationHash = createHash('sha256').update(rawForHash).digest('hex').slice(0, 16);
+
+  return { timestamp, users, stats, verificationHash };
+}
+
+/**
  * Verify that the snapshot's data is still consistent with the database.
  * Returns true if the verification hash matches a fresh snapshot.
  */

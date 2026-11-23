@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getJwtSecret } from '@/lib/auth';
@@ -128,6 +128,7 @@ export async function POST(req: NextRequest) {
     // Persist DB to Blob so funded data survives cold starts
     try {
       await syncDbToBlob();
+      await resetPrisma();
     } catch (syncErr) {
       console.error('[Admin Transactions POST] Blob sync failed (non-fatal):', syncErr);
     }

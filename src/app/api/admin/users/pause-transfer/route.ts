@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -54,7 +54,7 @@ export async function PATCH(req: NextRequest) {
     });
 
     // Persist to Blob
-    try { await syncDbToBlob(); } catch {}
+    try { await syncDbToBlob(); await resetPrisma(); } catch {}
 
     return NextResponse.json({
       success: true,

@@ -27,9 +27,14 @@ interface AdminUser {
   fullName: string;
   countryCode: string;
   kycStatus: string;
+  transferPaused?: boolean;
   createdAt: string;
   accounts: { id: string; currency: string; balance: number; accountNumber: string; accountType: string; isActive: boolean }[];
-  notifications: any[];
+  notifications?: any[];
+  totalBalance?: number;
+  checkingBalance?: number;
+  savingsBalance?: number;
+  notificationCount?: number;
 }
 
 interface AdminTransaction {
@@ -109,19 +114,33 @@ export default function AdminPanelPage() {
     if (!t || !a) { router.push('/admin/login'); return; }
     setToken(t);
     setAdmin(JSON.parse(a));
-    fetchUsers(t);
-    fetchTransactions(t);
-    fetchCryptoAddresses(t);
+    fetchAllData(t);
   }, [router]);
+
+  const fetchAllData = async (t: string) => {
+    await Promise.all([
+      fetchUsers(t),
+      fetchTransactions(t),
+      fetchCryptoAddresses(t),
+    ]);
+  };
 
   const fetchUsers = async (t: string) => {
     try {
-      const res = await fetch('/api/admin/users', { headers: { Authorization: `Bearer ${t}` } });
+      // Use snapshot endpoint for verified DB data — displays ALL registered users
+      // with live balances from the "unsnapshot" system
+      const res = await fetch('/api/admin/snapshot', { headers: { Authorization: `Bearer ${t}` } });
       if (!res.ok) throw new Error('Unauthorized');
       const data = await res.json();
-      setUsers(data);
+      // New response format: { snapshot: { users: [...], stats: {...} } }
+      if (data.snapshot?.users) {
+        setUsers(data.snapshot.users);
+      } else if (data.users) {
+        // Legacy format fallback
+        setUsers(data.users);
+      }
+      setLoading(false);
     } catch { localStorage.removeItem('uzu-admin-token'); router.push('/admin/login'); }
-    finally { setLoading(false); }
   };
 
   const approveKyc = async (userId: string, kycStatus: string) => {
@@ -217,13 +236,14 @@ export default function AdminPanelPage() {
       if (!res.ok) throw new Error(data.error || 'Transaction failed');
       setTxSuccess(`${txForm.type === 'credit' ? 'Credited' : 'Debited'} ${parseFloat(txForm.amount).toLocaleString()} ${txForm.currency} to ${selectedUser?.fullName}`);
       setTxForm({ ...txForm, amount: '', description: '' });
-      await Promise.all([fetchUsers(token), fetchTransactions(token)]);
-      // After funding, trigger a DB sync snapshot for the user
+      // Force Blob sync + snapshot refresh so all users see updated balances instantly
       try {
-        await fetch('/api/snapshot', {
+        await fetch('/api/admin/snapshot', {
+          method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
-      } catch {} // Non-critical
+      } catch {}
+      await Promise.all([fetchUsers(token), fetchTransactions(token)]);
     } catch (err: any) {
       setTxSuccess(`❌ ${err.message}`);
       setTimeout(() => setTxSuccess(''), 5000);
@@ -242,8 +262,14 @@ export default function AdminPanelPage() {
         body: JSON.stringify({ transactionId, status: newStatus, failureReason }),
       });
       if (res.ok) {
-        fetchTransactions(token);
-        fetchUsers(token);
+        // Force Blob sync after status change
+        try {
+          await fetch('/api/admin/snapshot', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch {}
+        fetchAllData(token);
       }
     } catch {}
     finally { setStatusLoading(null); }
@@ -259,7 +285,13 @@ export default function AdminPanelPage() {
         body: JSON.stringify({ accountId, isActive }),
       });
       if (res.ok) {
-        fetchUsers(token);
+        try {
+          await fetch('/api/admin/snapshot', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch {}
+        fetchAllData(token);
       }
     } catch {}
     finally { setAccountLoading(null); }
@@ -275,7 +307,13 @@ export default function AdminPanelPage() {
         body: JSON.stringify({ userId, transferPaused }),
       });
       if (res.ok) {
-        fetchUsers(token);
+        try {
+          await fetch('/api/admin/snapshot', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch {}
+        fetchAllData(token);
       }
     } catch {}
     finally { setStatusLoading(null); }
@@ -295,6 +333,13 @@ export default function AdminPanelPage() {
       setCryptoSuccess(editingCrypto ? 'Crypto address updated!' : 'Crypto address added!');
       setCryptoForm({ symbol: '', name: '', network: '', address: '', minDeposit: '' });
       setEditingCrypto(null);
+      // Force Blob sync so users see new addresses in their snapshot instantly
+      try {
+        await fetch('/api/admin/snapshot', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {}
       fetchCryptoAddresses(token);
     } catch { setCryptoSuccess('Operation failed'); }
     finally { setCryptoLoading(false); }
@@ -337,7 +382,9 @@ export default function AdminPanelPage() {
     tx.initiatedBy?.fullName?.toLowerCase().includes(txSearch.toLowerCase())
   );
 
-  const totalBalance = users.reduce((sum, u) => sum + u.accounts.reduce((s, a) => s + Number(a.balance), 0), 0);
+  const totalBalance = users.reduce((sum, u) => sum + (u.totalBalance ?? u.accounts.reduce((s, a) => s + Number(a.balance), 0)), 0);
+  const totalChecking = users.reduce((sum, u) => sum + (u.checkingBalance ?? 0), 0);
+  const totalSavings = users.reduce((sum, u) => sum + (u.savingsBalance ?? 0), 0);
   const totalUsers = users.length;
   const pendingTx = transactions.filter(t => ['INITIATED', 'HASHED', 'MULTISIG_PENDING'].includes(t.status)).length;
   const settledTx = transactions.filter(t => t.status === 'SETTLED').length;
@@ -380,7 +427,7 @@ export default function AdminPanelPage() {
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[9px] text-emerald-300 font-mono">DB Live</span>
             </div>
-            <button onClick={() => { fetchUsers(token!); fetchTransactions(token!); }} className="p-2 rounded-lg bg-slate-700 text-slate-400 hover:text-white transition-colors">
+            <button onClick={() => { fetchAllData(token!); }} className="p-2 rounded-lg bg-slate-700 text-slate-400 hover:text-white transition-colors">
               <RefreshCw size={16} />
             </button>
             <button onClick={logout} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 text-red-400 text-xs font-medium hover:bg-red-500/20 transition-colors">
@@ -391,7 +438,7 @@ export default function AdminPanelPage() {
       </header>
 
       <div className="p-6 space-y-6">
-        {/* Stats */}
+        {/* Stats — from DB snapshot */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">
             <div className="flex items-center gap-3">
@@ -402,7 +449,15 @@ export default function AdminPanelPage() {
           <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400"><Wallet size={20} /></div>
-              <div><p className="text-xs text-slate-400">Total Deposits</p><p className="text-xl font-bold text-white">${totalBalance.toLocaleString()}</p></div>
+              <div>
+                <p className="text-xs text-slate-400">Total Deposits</p>
+                <p className="text-xl font-bold text-white">${totalBalance.toLocaleString()}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[9px] text-blue-400">CHK ${totalChecking.toLocaleString()}</span>
+                  <span className="text-[9px] text-slate-600">|</span>
+                  <span className="text-[9px] text-emerald-400">SAV ${totalSavings.toLocaleString()}</span>
+                </div>
+              </div>
             </div>
           </div>
           <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">

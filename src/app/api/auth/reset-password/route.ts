@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { hashPassword, verifyAccessToken } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
     // Persist password change to Blob
     try {
       await syncDbToBlob();
+      await resetPrisma();
     } catch (syncErr) {
       console.error('[Reset Password] Blob sync failed (non-fatal):', syncErr);
     }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
     // Persist DB to Blob
     try {
       await syncDbToBlob();
+      await resetPrisma();
     } catch (syncErr) {
       console.error('[Admin KYC] Blob sync failed (non-fatal):', syncErr);
     }

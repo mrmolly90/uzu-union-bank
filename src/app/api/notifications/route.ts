@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
@@ -41,6 +41,7 @@ export async function PATCH(req: NextRequest) {
     // Persist read status to Blob
     try {
       await syncDbToBlob();
+      await resetPrisma();
     } catch (syncErr) {
       console.error('[Notifications PATCH] Blob sync failed (non-fatal):', syncErr);
     }
