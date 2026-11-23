@@ -113,6 +113,9 @@ export default function AdminPanelPage() {
   }, [router]);
 
   const fetchAllData = async (t: string) => {
+    // Clear stale state before fetching fresh snapshot data
+    setUsers([]);
+    setTransactions([]);
     await Promise.all([
       fetchUsers(t),
       fetchTransactions(t),
@@ -122,21 +125,24 @@ export default function AdminPanelPage() {
 
   const fetchUsers = async (t: string) => {
     try {
-      // Use snapshot endpoint for verified DB data — displays ALL registered users
-      // with live balances from the "unsnapshot" system
+      // Always fetch fresh from DB snapshot — never use cached/old memory.
+      // This ensures deleted users disappear and new users appear immediately.
       const res = await fetch('/api/admin/snapshot', { headers: { Authorization: `Bearer ${t}` } });
       if (!res.ok) throw new Error('Unauthorized');
       const data = await res.json();
-      // New response format: { snapshot: { users: [...], stats: {...} } }
       if (data.snapshot?.users) {
         setUsers(data.snapshot.users);
         if (data.snapshot.timestamp) setSnapshotTime(data.snapshot.timestamp);
       } else if (data.users) {
-        // Legacy format fallback
         setUsers(data.users);
       }
       setLoading(false);
-    } catch { localStorage.removeItem('uzu-admin-token'); router.push('/admin/login'); }
+    } catch {
+      // On error, clear users to prevent stale data display
+      setUsers([]);
+      localStorage.removeItem('uzu-admin-token');
+      router.push('/admin/login');
+    }
   };
 
   const approveKyc = async (userId: string, kycStatus: string) => {
@@ -313,6 +319,38 @@ export default function AdminPanelPage() {
         fetchAllData(token);
       }
     } catch {}
+    finally { setStatusLoading(null); }
+  };
+
+  const handleDeleteUser = async (userId: string, fullName: string) => {
+    if (!token) return;
+    if (!confirm(`⚠️ Permanently delete user "${fullName}"?\n\nThis will remove ALL their accounts, transactions, and data. They can re-register.`)) return;
+    setStatusLoading(`delete-${userId}`);
+    try {
+      const res = await fetch('/api/admin/users/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Delete failed');
+      }
+      // Force snapshot refresh so deleted user disappears immediately
+      try {
+        const snapRes = await fetch('/api/admin/snapshot', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (snapRes.ok) {
+          const snapData = await snapRes.json();
+          if (snapData.snapshot) setSnapshotTime(snapData.snapshot.timestamp);
+        }
+      } catch {}
+      fetchAllData(token);
+    } catch (err: any) {
+      alert(`Delete failed: ${err.message}`);
+    }
     finally { setStatusLoading(null); }
   };
 
@@ -596,6 +634,11 @@ export default function AdminPanelPage() {
                             <button onClick={() => handlePauseTransfer(u.id, !(u as any).transferPaused)} disabled={statusLoading === `pause-${u.id}`}
                               className={`px-2 py-1 rounded-lg text-[9px] font-medium transition-colors disabled:opacity-50 ${(u as any).transferPaused ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'}`}>
                               {(u as any).transferPaused ? 'Resume' : 'Pause'}
+                            </button>
+                            <button onClick={() => handleDeleteUser(u.id, u.fullName)} disabled={statusLoading === `delete-${u.id}`}
+                              className="px-2 py-1 rounded-lg bg-red-500/10 text-red-400 text-[9px] font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50 flex items-center gap-1">
+                              {statusLoading === `delete-${u.id}` ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
+                              Delete
                             </button>
                           </div>
                         </td>
