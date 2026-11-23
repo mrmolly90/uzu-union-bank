@@ -112,7 +112,13 @@ export default function TransferPage() {
     }
   };
 
-  const updateField = (field: string, value: string) => setForm(prev => ({ ...prev, [field]: value }));
+  const updateField = (field: string, value: string) => {
+    // Auto-uppercase SWIFT and IBAN for validation compatibility
+    if (field === 'swift' || field === 'iban') {
+      value = value.toUpperCase().replace(/\s/g, '');
+    }
+    setForm(prev => ({ ...prev, [field]: value }));
+  };
 
   const estimatedRate = convertCurrency(1, form.fromCurrency, form.toCurrency);
   const estimatedAmount = form.amount ? (parseFloat(form.amount) * estimatedRate).toFixed(2) : '0.00';
