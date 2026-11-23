@@ -57,14 +57,12 @@ export default function TransferPage() {
   useEffect(() => {
     if (!hydrated) return;
     if (!isAuthenticated) router.push('/login');
-    fetchAccounts();
-    // Take a DB snapshot to verify user store data for wire transfer
-    // Snapshot is the SOURCE OF TRUTH for balances — reflects admin funding/debit instantly
+    // Fetch snapshot as the EXCLUSIVE source of truth for balances.
+    // On page reload, this ensures the exact DB balance is displayed.
     const { tokens } = useAuthStore.getState();
     if (tokens?.accessToken) {
       useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
         .then(snap => {
-          // Use snapshot accounts as primary source (verified DB balances)
           if (snap?.accounts) setAccounts(snap.accounts);
         })
         .catch(err => console.warn('[Transfer] Snapshot fetch (non-fatal):', err));
@@ -75,18 +73,15 @@ export default function TransferPage() {
     try {
       const { tokens } = useAuthStore.getState();
       if (!tokens?.accessToken) return;
-      // First try snapshot for verified DB balances
+      // Use snapshot as the SOLE source of truth for balances
       const snap = useSnapshotStore.getState().snapshot;
       if (snap?.accounts) {
         setAccounts(snap.accounts);
         return;
       }
-      // Fallback to API
-      const res = await fetch('/api/accounts', { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(data);
-      }
+      // Fallback: fetch fresh snapshot
+      const freshSnap = await useSnapshotStore.getState().fetchSnapshot(tokens.accessToken);
+      if (freshSnap?.accounts) setAccounts(freshSnap.accounts);
     } catch (err) { console.error('Fetch accounts error:', err); }
   };
 
@@ -162,9 +157,8 @@ export default function TransferPage() {
 
       setReceiptRef(`UZU-WIRE-${Date.now().toString(36).toUpperCase()}`);
       setSuccess(true);
-      fetchAccounts();
-      // Take a fresh DB snapshot after successful transfer to verify updated balances
-      // This ensures the receipt and balance display reflect the confirmed debit
+      // Take a fresh DB snapshot after successful transfer — this is the EXCLUSIVE
+      // source of truth for updated balances. No separate /api/accounts call needed.
       const { tokens: freshTokens } = useAuthStore.getState();
       if (freshTokens?.accessToken) {
         const freshSnap = await useSnapshotStore.getState().fetchSnapshot(freshTokens.accessToken)

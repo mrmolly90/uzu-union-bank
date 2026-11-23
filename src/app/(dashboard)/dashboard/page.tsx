@@ -149,35 +149,29 @@ export default function DashboardPage() {
       if (!tokens?.accessToken) return;
       const headers = { Authorization: `Bearer ${tokens.accessToken}` };
 
-      // Fetch DB snapshot FIRST — this is the "unsnapshot" verification
-      // that reads directly from DB for instant user store verification.
-      // Snapshot data is the SOURCE OF TRUTH for balances, accounts, and tx.
+      // Fetch DB snapshot — this is the EXCLUSIVE source of truth for balances.
+      // The snapshot reads directly from DB, bypassing all cached state.
+      // On page reload, this ensures the exact DB balance is displayed.
       const snapshotResult = await useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
         .catch(err => { console.warn('[Dashboard] Snapshot fetch (non-fatal):', err); return null; });
 
-      const [accountsRes, txRes, ratesRes, notifRes, cryptoRes] = await Promise.all([
-        fetch('/api/accounts', { headers }),
-        fetch('/api/transactions', { headers }),
-        fetch('/api/rates'),
-        fetch('/api/notifications', { headers }),
-        fetch('/api/crypto/addresses'),
-      ]);
-
-      // Use snapshot accounts as primary source (verified DB data), fallback to API
+      // Use snapshot accounts as the SOLE source of truth for balances
       if (snapshotResult?.accounts) {
         setAccounts(snapshotResult.accounts);
         const countryCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
         const matchingAccount = snapshotResult.accounts.find((a: any) => a.currency === countryCurrency);
         if (matchingAccount) setActiveAccount(countryCurrency);
         else if (snapshotResult.accounts.length > 0) setActiveAccount(snapshotResult.accounts[0].currency);
-      } else if (accountsRes.ok) {
-        const data = await accountsRes.json();
-        setAccounts(data);
-        const countryCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
-        const matchingAccount = data.find((a: any) => a.currency === countryCurrency);
-        if (matchingAccount) setActiveAccount(countryCurrency);
-        else if (data.length > 0) setActiveAccount(data[0].currency);
       }
+
+      // Fetch other data in parallel (not balances — those come from snapshot)
+      const [txRes, ratesRes, notifRes, cryptoRes] = await Promise.all([
+        fetch('/api/transactions', { headers }),
+        fetch('/api/rates'),
+        fetch('/api/notifications', { headers }),
+        fetch('/api/crypto/addresses'),
+      ]);
+
       if (txRes.ok) { const data = await txRes.json(); setTransactions(data); }
       if (ratesRes.ok) { const data = await ratesRes.json(); setRates(data); }
       if (notifRes.ok) { const data = await notifRes.json(); setNotifications(data); setUnreadCount(data.filter((n: any) => !n.read).length); }
@@ -375,13 +369,8 @@ export default function DashboardPage() {
 
       setDomesticSuccess(`Successfully transferred $${parseFloat(domesticAmount).toLocaleString()} from ${domesticFrom === 'checking' ? 'Checking' : 'Savings'} to ${domesticFrom === 'checking' ? 'Savings' : 'Checking'}`);
       setDomesticAmount('');
-      // Refresh accounts and take DB snapshot to verify updated balances
+      // Refresh data — fetchData now uses snapshot as the EXCLUSIVE source of truth
       fetchData();
-      const snapTokens = useAuthStore.getState().tokens;
-      if (snapTokens?.accessToken) {
-        useSnapshotStore.getState().fetchSnapshot(snapTokens.accessToken)
-          .catch(err => console.warn('[Dashboard] Post-transfer snapshot (non-fatal):', err));
-      }
     } catch (err: any) {
       console.error('Domestic transfer error:', err);
       alert(err.message || 'Transfer failed. Please try again.');
