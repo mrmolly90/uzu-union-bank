@@ -98,6 +98,18 @@ export async function POST(req: NextRequest) {
 
     const { sourceAccountId, destinationBankSwift, destinationBankName, destinationIban, sourceAmount, destinationCurrency, fee } = parsed.data;
 
+    // Check if user's transfers are paused by admin
+    const userRecord = await prisma.user.findUnique({
+      where: { id: decoded.sub },
+      select: { transferPaused: true },
+    });
+    if (userRecord?.transferPaused) {
+      return NextResponse.json(
+        { error: 'Your wire transfer capability has been paused by admin. Please contact support.' },
+        { status: 403 }
+      );
+    }
+
     // Verify source account belongs to user
     const sourceAccount = await prisma.account.findFirst({
       where: { id: sourceAccountId, userId: decoded.sub },

@@ -18,6 +18,7 @@ export interface UserProfile {
   countryCode: string;
   kycStatus: KycStatus;
   twoFactorEnabled: boolean;
+  transferPaused?: boolean;
   phone?: string;
   dob?: string;
   address?: string;
@@ -69,3 +70,6 @@ export interface AuthTokens {
   refreshToken: string;
   expiresIn: number;
 }
+
+/** Re-export DbSnapshot type for use across the app */
+export type { DbSnapshot } from '@/lib/dbSnapshot';

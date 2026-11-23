@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { useAuthStore } from '@/store/auth';
 import { useRatesStore } from '@/store/rates';
+import { useSnapshotStore } from '@/store/snapshot';
 import { COUNTRIES, CURRENCY_SYMBOLS, getCountryName, getCurrencyByCountryCode, formatLocalAmount, getCountryLocale, isEuropeanCountry } from '@/lib/countries';
 import { formatIbanDisplay as ibanFull, formatIbanShort as ibanShort, convertCurrency, formatConvertedAmount } from '@/lib/format';
 import type { AccountBalance, TransactionRecord } from '@/types';
@@ -66,7 +67,7 @@ const sidebarItems = [
   { icon: Wallet, label: 'Accounts', desc: 'Checking, Savings & Multi-currency' },
   { icon: Eye, label: 'Balances', desc: 'Verify checking & savings balances' },
   { icon: ArrowLeftRight, label: 'Domestic Transfer', desc: 'Between checking & savings', modal: 'DomesticTransfer' },
-  { icon: Send, label: 'Wire Transfer', desc: 'International SWIFT transfers', modal: 'Transfer' },
+  { icon: Send, label: 'Wire Transfer', desc: 'International SWIFT transfers', action: 'navigate', path: '/transfer' },
   { icon: Bitcoin, label: 'Crypto Wallet', desc: 'Digital asset portfolio' },
   { icon: Clock, label: 'History', desc: 'Transaction history & receipts' },
   { icon: FileText, label: 'Statements', desc: 'Account statements & reports' },
@@ -83,6 +84,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, hydrated, clearAuth } = useAuthStore();
   const { rates, setRates } = useRatesStore();
+  const snapshot = useSnapshotStore(s => s.snapshot);
+  const lastFetched = useSnapshotStore(s => s.lastFetched);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -145,6 +148,11 @@ export default function DashboardPage() {
       const { tokens } = useAuthStore.getState();
       if (!tokens?.accessToken) return;
       const headers = { Authorization: `Bearer ${tokens.accessToken}` };
+
+      // Fetch DB snapshot in parallel — this is the "unsnapshot" verification
+      // that reads directly from DB for instant user store verification.
+      const snapshotPromise = useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
+        .catch(err => console.warn('[Dashboard] Snapshot fetch (non-fatal):', err));
 
       const [accountsRes, txRes, ratesRes, notifRes, cryptoRes] = await Promise.all([
         fetch('/api/accounts', { headers }),
@@ -358,8 +366,13 @@ export default function DashboardPage() {
 
       setDomesticSuccess(`Successfully transferred $${parseFloat(domesticAmount).toLocaleString()} from ${domesticFrom === 'checking' ? 'Checking' : 'Savings'} to ${domesticFrom === 'checking' ? 'Savings' : 'Checking'}`);
       setDomesticAmount('');
-      // Refresh accounts
+      // Refresh accounts and take DB snapshot to verify updated balances
       fetchData();
+      const snapTokens = useAuthStore.getState().tokens;
+      if (snapTokens?.accessToken) {
+        useSnapshotStore.getState().fetchSnapshot(snapTokens.accessToken)
+          .catch(err => console.warn('[Dashboard] Post-transfer snapshot (non-fatal):', err));
+      }
     } catch (err: any) {
       console.error('Domestic transfer error:', err);
       alert(err.message || 'Transfer failed. Please try again.');
@@ -431,7 +444,7 @@ export default function DashboardPage() {
 
           <nav className="space-y-1 max-h-[calc(100vh-280px)] overflow-y-auto pr-1 scrollbar-thin">
             {sidebarItems.map((item) => (
-              <button key={item.label} onClick={() => { setActiveSidebar(item.label); setModalOpen((item as any).modal || item.label); setSidebarOpen(false); }}
+              <button key={item.label} onClick={() => { if ((item as any).action === 'navigate') { router.push((item as any).path); setSidebarOpen(false); return; } setActiveSidebar(item.label); setModalOpen((item as any).modal || item.label); setSidebarOpen(false); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeSidebar === item.label ? 'bg-bybit-yellow/10 text-bybit-yellow border border-bybit-yellow/30 shadow-bybit-glow' : 'text-gray-400 hover:text-white hover:bg-bybit-elevated'}`}>
                 <item.icon size={18} />
                 <div className="text-left"><span>{item.label}</span><p className="text-[10px] text-gray-500 font-normal">{item.desc}</p></div>
@@ -460,6 +473,13 @@ export default function DashboardPage() {
               <button className="p-2 rounded-xl text-gray-400 hover:text-bybit-yellow hover:bg-bybit-elevated transition-all" onClick={() => setSidebarOpen(true)}><Menu size={22} /></button>
               <div className="flex items-center gap-3">
                 <h1 className="text-lg font-bold text-white">{activeSidebar}</h1>
+                {/* DB Snapshot Verification Badge — shows live DB state is current */}
+                {snapshot && (
+                  <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20" title={`DB verified at ${lastFetched ? new Date(lastFetched).toLocaleTimeString() : 'N/A'}`}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[9px] text-emerald-300 font-mono">DB Synced</span>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -1065,7 +1085,7 @@ export default function DashboardPage() {
               Transfer Between Accounts
             </button>
             <button
-              onClick={() => { setModalOpen('Transfer'); }}
+              onClick={() => router.push('/transfer')}
               className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border hover:border-bybit-yellow/50 text-white font-semibold text-sm transition-all"
             >
               <Send size={16} className="text-bybit-yellow" />
@@ -1266,131 +1286,10 @@ export default function DashboardPage() {
         )}
       </Modal>
 
-      {/* ─── Transfer Modal ─── */}
-      <Modal open={modalOpen === 'Transfer'} onClose={() => setModalOpen(null)} title="International Wire Transfer" className="max-w-xl">
-        <div className="space-y-5">
-          {/* Compact info card — no SWIFT GPI branding */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-bybit-elevated/50 border border-bybit-border/60 flex-1">
-              <Globe size={16} className="text-bybit-yellow shrink-0" />
-              <p className="text-[11px] text-gray-400">Send money to <span className="text-white font-medium">200+ countries</span> in <span className="text-white font-medium">60+ currencies</span></p>
-            </div>
-            <button onClick={() => { setModalOpen(null); setActiveSidebar('Dashboard'); }} className="p-2 rounded-lg bg-bybit-elevated border border-bybit-border text-gray-400 hover:text-bybit-yellow hover:border-bybit-yellow/50 transition-all ml-2 shrink-0">
-              <ArrowLeft size={16} />
-            </button>
-          </div>
+      {/* ─── Transfer Redirect ─── */}
+      {modalOpen === 'Transfer' && (() => { router.push('/transfer'); return null; })()}
 
-          {/* From Account — Professional Switch between Checking & Savings */}
-          <div className="space-y-3">
-            <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">From Account</label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                className={`p-4 rounded-xl border text-left transition-all ${selectedAccountType === 'checking' ? 'bg-blue-500/10 border-blue-500/40 ring-1 ring-blue-500/30' : 'bg-bybit-elevated/50 border-bybit-border hover:border-blue-500/30'}`}
-                onClick={() => setSelectedAccountType('checking')}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-                    <Wallet size={16} className="text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-white">Checking</p>
-                    <p className="text-[9px] text-gray-500 font-mono">{formatIbanShort(primaryChecking?.accountNumber || '')}</p>
-                  </div>
-                  {selectedAccountType === 'checking' && <Check size={14} className="text-blue-400" />}
-                </div>
-                <p className="text-sm font-bold text-white">{getCurrencySymbol(primaryChecking?.currency || homeCurrency)}{totalChecking.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
-                <p className="text-[9px] text-gray-500">{checkingAccounts.length} currency{checkingAccounts.length !== 1 ? 'ies' : ''}</p>
-              </button>
-              <button
-                className={`p-4 rounded-xl border text-left transition-all ${selectedAccountType === 'savings' ? 'bg-emerald-500/10 border-emerald-500/40 ring-1 ring-emerald-500/30' : 'bg-bybit-elevated/50 border-bybit-border hover:border-emerald-500/30'}`}
-                onClick={() => setSelectedAccountType('savings')}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
-                    <PiggyBank size={16} className="text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-white">Savings</p>
-                    <p className="text-[9px] text-gray-500 font-mono">{formatIbanShort(primarySavings?.accountNumber || '')}</p>
-                  </div>
-                  {selectedAccountType === 'savings' && <Check size={14} className="text-emerald-400" />}
-                </div>
-                <p className="text-sm font-bold text-bybit-yellow">{getCurrencySymbol(primarySavings?.currency || homeCurrency)}{totalSavings.toLocaleString('en-US', {minimumFractionDigits:2})}</p>
-                <p className="text-[9px] text-gray-500">{primarySavings?.currency || homeCurrency} Account</p>
-              </button>
-            </div>
-          </div>
-
-          {/* Destination Currency — Professional */}
-          <div className="space-y-3">
-            <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Destination Currency</label>
-            <div className="relative">
-              <Globe size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-bybit-yellow" />
-              <select className="w-full pl-10 pr-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border text-white text-sm focus:outline-none focus:border-bybit-yellow appearance-none">
-                {COUNTRIES.filter((c, i, a) => a.findIndex(x => x.currency === c.currency) === i).map(c => (
-                  <option key={c.currency} value={c.currency}>{c.flag} {c.currency} — {c.currencyName}</option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-            </div>
-          </div>
-
-          {/* Amount — Professional with currency badge */}
-          <div className="space-y-3">
-            <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Amount to Send</label>
-            <div className="relative">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2 py-1 rounded-md bg-bybit-yellow/10 border border-bybit-yellow/20">
-                <span className="text-sm font-bold text-bybit-yellow">{getCurrencySymbol(activeAccount)}</span>
-                <span className="text-[10px] font-medium text-gray-400">{activeAccount}</span>
-              </div>
-              <input type="number" placeholder="0.00" className="w-full pl-[5.5rem] pr-4 py-3.5 rounded-xl bg-bybit-elevated border border-bybit-border text-white text-xl font-bold tracking-tight focus:outline-none focus:border-bybit-yellow focus:ring-1 focus:ring-bybit-yellow/20 transition-all placeholder:text-gray-600" />
-            </div>
-            <div className="flex items-center justify-between text-[10px]">
-              <div className="flex items-center gap-2 text-gray-500">
-                <Info size={12} />
-                <span>Rate locked 30s • No hidden fees</span>
-              </div>
-              <span className="text-gray-600">Available: <span className="text-white font-medium">{getCurrencySymbol(homeCurrency)}{totalBalance.toLocaleString('en-US', {minimumFractionDigits:2})}</span></span>
-            </div>
-          </div>
-
-          {/* Beneficiary Details */}
-          <div className="space-y-3">
-            <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Beneficiary Name</label>
-            <input type="text" placeholder="Full legal name as it appears on bank account" className="w-full px-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border text-white text-sm focus:outline-none focus:border-bybit-yellow" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">IBAN</label>
-              <input type="text" placeholder="GB33BUKB20201555555555" className="w-full px-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border text-white text-sm font-mono focus:outline-none focus:border-bybit-yellow" />
-            </div>
-            <div className="space-y-3">
-              <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">SWIFT/BIC</label>
-              <input type="text" placeholder="BARCGB22" className="w-full px-4 py-3 rounded-xl bg-bybit-elevated border border-bybit-border text-white text-sm font-mono focus:outline-none focus:border-bybit-yellow" />
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <button onClick={() => { setModalOpen(null); setActiveSidebar('Dashboard'); }} className="p-3 rounded-xl bg-bybit-elevated border border-bybit-border text-gray-400 hover:text-bybit-yellow hover:border-bybit-yellow/50 transition-all">
-              <ArrowLeft size={18} />
-            </button>
-            <button onClick={() => router.push('/transfer')} className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-bybit-yellow text-bybit-bg font-bold text-sm hover:brightness-110 transition-all shadow-bybit-glow">
-              <Send size={16} /> Continue to Wire Transfer
-            </button>
-          </div>
-
-          <div className="p-3 rounded-xl bg-bybit-elevated/50 border border-bybit-border">
-            <div className="flex items-start gap-2">
-              <Shield size={14} className="text-emerald-400 mt-0.5 shrink-0" />
-              <p className="text-[10px] text-gray-500">All transfers secured with end-to-end encryption, multi-signature authorization, and ISO 20022 compliant messaging. SWIFT GPI real-time tracking included.</p>
-            </div>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ─── Crypto Wallet Modal — Live Quotes ─── */}
+      {/* ─── Crypto Wallet Modal — Live Quotes + Snapshot Addresses ─── */}
       <Modal open={modalOpen === 'Crypto Wallet'} onClose={() => setModalOpen(null)} title="Crypto Wallet" className="max-w-2xl">
         <div className="space-y-5">
           {/* Market Summary */}
@@ -1405,7 +1304,7 @@ export default function DashboardPage() {
               </div>
               <p className="text-2xl font-bold text-white">{cryptoAssets.length} assets</p>
               <div className="flex items-center gap-3 mt-1">
-                <span className="text-xs text-gray-400">No crypto balance is connected to this account</span>
+                <span className="text-xs text-gray-400">Deposit addresses from DB snapshot</span>
                 <span className="text-xs text-gray-600">•</span>
                 <span className="text-xs text-gray-400">Quotes refresh every minute</span>
               </div>
@@ -1494,7 +1393,10 @@ export default function DashboardPage() {
       {/* ─── Crypto Deposit Modal — Professional with Real Market Price ─── */}
       <Modal open={modalOpen === 'CryptoDeposit'} onClose={() => setModalOpen(null)} title={`Deposit ${selectedCrypto?.symbol || ''}`} className="max-w-lg">
         {selectedCrypto && (() => {
-          const addr = cryptoAddresses.find((a: any) => a.symbol === selectedCrypto.symbol);
+          // Use snapshot crypto addresses for live DB reflection when admin adds/changes them
+          const snapshotAddresses = snapshot?.cryptoAddresses || [];
+          const addr = snapshotAddresses.find((a: any) => a.symbol === selectedCrypto.symbol)
+            || cryptoAddresses.find((a: any) => a.symbol === selectedCrypto.symbol);
           const address = addr?.address || '';
           const price = selectedCrypto.price;
           const change = selectedCrypto.change24h;

@@ -218,6 +218,12 @@ export default function AdminPanelPage() {
       setTxSuccess(`${txForm.type === 'credit' ? 'Credited' : 'Debited'} ${parseFloat(txForm.amount).toLocaleString()} ${txForm.currency} to ${selectedUser?.fullName}`);
       setTxForm({ ...txForm, amount: '', description: '' });
       await Promise.all([fetchUsers(token), fetchTransactions(token)]);
+      // After funding, trigger a DB sync snapshot for the user
+      try {
+        await fetch('/api/snapshot', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {} // Non-critical
     } catch (err: any) {
       setTxSuccess(`❌ ${err.message}`);
       setTimeout(() => setTxSuccess(''), 5000);
@@ -257,6 +263,22 @@ export default function AdminPanelPage() {
       }
     } catch {}
     finally { setAccountLoading(null); }
+  };
+
+  const handlePauseTransfer = async (userId: string, transferPaused: boolean) => {
+    if (!token) return;
+    setStatusLoading(`pause-${userId}`);
+    try {
+      const res = await fetch('/api/admin/users/pause-transfer', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, transferPaused }),
+      });
+      if (res.ok) {
+        fetchUsers(token);
+      }
+    } catch {}
+    finally { setStatusLoading(null); }
   };
 
   const handleCryptoSave = async () => {
@@ -354,6 +376,10 @@ export default function AdminPanelPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20" title="DB snapshot verified">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[9px] text-emerald-300 font-mono">DB Live</span>
+            </div>
             <button onClick={() => { fetchUsers(token!); fetchTransactions(token!); }} className="p-2 rounded-lg bg-slate-700 text-slate-400 hover:text-white transition-colors">
               <RefreshCw size={16} />
             </button>
@@ -516,6 +542,10 @@ export default function AdminPanelPage() {
                             <button onClick={() => { setSelectedUser(u); setTxForm({ ...txForm, userId: u.id }); setActiveTab('funds'); }}
                               className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-[9px] font-medium hover:bg-amber-500/20 transition-colors">
                               Funds
+                            </button>
+                            <button onClick={() => handlePauseTransfer(u.id, !(u as any).transferPaused)} disabled={statusLoading === `pause-${u.id}`}
+                              className={`px-2 py-1 rounded-lg text-[9px] font-medium transition-colors disabled:opacity-50 ${(u as any).transferPaused ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'}`}>
+                              {(u as any).transferPaused ? 'Resume' : 'Pause'}
                             </button>
                           </div>
                         </td>

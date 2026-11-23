@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuthStore } from '@/store/auth';
+import { useSnapshotStore } from '@/store/snapshot';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -114,6 +115,15 @@ function LoginForm() {
 
       const result = await response.json();
       useAuthStore.getState().setAuth(result.user, result.tokens);
+
+      // Immediately take a fresh DB snapshot to display verified user store info
+      // the moment the user logs in — the "unsnapshot" verification mechanism.
+      try {
+        await useSnapshotStore.getState().fetchSnapshot(result.tokens.accessToken);
+      } catch (snapshotErr) {
+        console.warn('[Login] Snapshot fetch failed (non-fatal):', snapshotErr);
+      }
+
       setErrors({});
       setStep('granted');
       setTimeout(() => router.replace('/dashboard'), 900);

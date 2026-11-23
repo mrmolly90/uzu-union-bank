@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { useAuthStore } from '@/store/auth';
+import { useSnapshotStore } from '@/store/snapshot';
 import { COUNTRIES, CURRENCY_SYMBOLS, getCurrencyByCountryCode, getCountryName, formatLocalAmount, getCountryLocale, isEuropeanCountry } from '@/lib/countries';
 import type { AccountBalance } from '@/types';
 import { formatIbanDisplay as ibanFull, formatIbanShort as ibanShort, convertCurrency } from '@/lib/format';
@@ -47,12 +48,22 @@ export default function TransferPage() {
   const [receiptRef, setReceiptRef] = useState('');
   const [submitError, setSubmitError] = useState('');
 
+  // DB Snapshot — reflects live transferPaused status from admin
+  const snapshot = useSnapshotStore(s => s.snapshot);
+  const transferPaused = snapshot?.user?.transferPaused ?? false;
+
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!hydrated) return;
     if (!isAuthenticated) router.push('/login');
     fetchAccounts();
+    // Take a DB snapshot to verify user store data for wire transfer
+    const { tokens } = useAuthStore.getState();
+    if (tokens?.accessToken) {
+      useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
+        .catch(err => console.warn('[Transfer] Snapshot fetch (non-fatal):', err));
+    }
   }, [isAuthenticated, hydrated, router]);
 
   const fetchAccounts = async () => {
@@ -134,6 +145,9 @@ export default function TransferPage() {
       setReceiptRef(`UZU-WIRE-${Date.now().toString(36).toUpperCase()}`);
       setSuccess(true);
       fetchAccounts();
+      // Take a fresh DB snapshot after successful transfer to verify updated balances
+      useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
+        .catch(err => console.warn('[Transfer] Post-transfer snapshot (non-fatal):', err));
     } catch (err: any) {
       console.error('Transfer error:', err);
       setSubmitError(err.message || 'Transfer failed. Please try again.');
@@ -225,6 +239,17 @@ export default function TransferPage() {
             <span className="text-[10px] text-gray-400">SWIFT GPI</span>
           </div>
         </div>
+
+        {/* Transfer Paused Warning — from DB snapshot */}
+        {transferPaused && (
+          <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start gap-3">
+            <AlertCircle size={20} className="text-red-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-red-300">Transfers Paused</p>
+              <p className="text-xs text-red-200/70 mt-1">Your wire transfer capability has been paused by admin. Please contact support for assistance.</p>
+            </div>
+          </div>
+        )}
 
         {/* Progress Steps */}
         <div className="flex items-center gap-2 mb-6">

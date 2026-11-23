@@ -18,6 +18,7 @@ model User {
   kycStatus         String    @default("PENDING")
   twoFactorEnabled  Boolean   @default(false)
   twoFactorSecret   String?
+  transferPaused    Boolean   @default(false)
   phone             String?
   dob               String?
   address           String?

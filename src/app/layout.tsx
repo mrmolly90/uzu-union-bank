@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { ToastContainer } from '@/components/ui/Toast';
 import Background3D from '@/components/layout/Background3D';
+import { AuthSnapshotProvider } from '@/components/layout/AuthSnapshotProvider';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -31,9 +32,11 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="bg-bybit-bg text-gray-100 antialiased min-h-screen relative">
         <Background3D />
-        <div className="relative z-10">
-          {children}
-        </div>
+        <AuthSnapshotProvider>
+          <div className="relative z-10">
+            {children}
+          </div>
+        </AuthSnapshotProvider>
         <ToastContainer />
         {/* SmartSupp Live Chat Widget */}
         <script
