@@ -3,6 +3,7 @@ import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
+import { takeUserSnapshot } from '@/lib/dbSnapshot';
 
 export async function POST(req: NextRequest) {
   try {
@@ -98,7 +99,13 @@ export async function POST(req: NextRequest) {
       console.error('[Domestic Transfer POST] Blob sync failed (non-fatal):', syncErr);
     }
 
-    return NextResponse.json(tx, { status: 201 });
+    // Return snapshot data inline so user's dashboard updates instantly (milliseconds)
+    try {
+      const snapshot = await takeUserSnapshot(decoded.sub);
+      return NextResponse.json({ transaction: tx, snapshot }, { status: 201 });
+    } catch {
+      return NextResponse.json(tx, { status: 201 });
+    }
   } catch (err) {
     console.error('[Domestic Transfer POST]', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });

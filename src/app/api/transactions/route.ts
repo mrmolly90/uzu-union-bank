@@ -4,6 +4,7 @@ import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
 import { transferSchema } from '@/lib/validations';
+import { takeUserSnapshot } from '@/lib/dbSnapshot';
 
 /** Fallback FX rates used when the database doesn't have a pair. */
 const FALLBACK_RATES: Record<string, number> = {
@@ -193,7 +194,13 @@ export async function POST(req: NextRequest) {
       console.error('[Transactions POST] Blob sync failed (non-fatal):', syncErr);
     }
 
-    return NextResponse.json(tx, { status: 201 });
+    // Return snapshot data inline so user's dashboard updates instantly (milliseconds)
+    try {
+      const snapshot = await takeUserSnapshot(decoded.sub);
+      return NextResponse.json({ transaction: tx, snapshot }, { status: 201 });
+    } catch {
+      return NextResponse.json(tx, { status: 201 });
+    }
   } catch (err) {
     console.error('[Transactions POST]', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });

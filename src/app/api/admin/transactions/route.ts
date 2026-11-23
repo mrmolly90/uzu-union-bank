@@ -5,6 +5,7 @@ import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getJwtSecret } from '@/lib/auth';
 import { getCurrencyByCountryCode } from '@/lib/countries';
+import { takeUserSnapshot } from '@/lib/dbSnapshot';
 
 function verifyAdmin(req: NextRequest) {
   const auth = req.headers.get('authorization');
@@ -133,7 +134,13 @@ export async function POST(req: NextRequest) {
       console.error('[Admin Transactions POST] Blob sync failed (non-fatal):', syncErr);
     }
 
-    return NextResponse.json(tx, { status: 201 });
+    // Return snapshot data inline so user's dashboard updates instantly (milliseconds)
+    try {
+      const snapshot = await takeUserSnapshot(userId, homeCurrency);
+      return NextResponse.json({ transaction: tx, snapshot }, { status: 201 });
+    } catch {
+      return NextResponse.json(tx, { status: 201 });
+    }
   } catch (err) {
     console.error('[Admin Transactions POST]', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });

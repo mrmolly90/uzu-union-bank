@@ -388,10 +388,12 @@ export default function DashboardPage() {
         throw new Error(err.error || 'Transfer failed');
       }
 
+      const data = await res.json();
+
       setDomesticSuccess(`Successfully transferred $${parseFloat(domesticAmount).toLocaleString()} from ${domesticFrom === 'checking' ? 'Checking' : 'Savings'} to ${domesticFrom === 'checking' ? 'Savings' : 'Checking'}`);
       setDomesticAmount('');
-      // Refresh data — fetchData now uses snapshot as the EXCLUSIVE source of truth
-      fetchData();
+      // Use inline snapshot data from mutation response — updates balance in milliseconds
+      if (data.snapshot?.accounts) setAccounts(data.snapshot.accounts);
     } catch (err: any) {
       console.error('Domestic transfer error:', err);
       alert(err.message || 'Transfer failed. Please try again.');

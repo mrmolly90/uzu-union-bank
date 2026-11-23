@@ -165,21 +165,13 @@ export default function TransferPage() {
         }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Transfer failed');
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Transfer failed');
 
       setReceiptRef(`UZU-WIRE-${Date.now().toString(36).toUpperCase()}`);
       setSuccess(true);
-      // Take a fresh DB snapshot after successful transfer — this is the EXCLUSIVE
-      // source of truth for updated balances. No separate /api/accounts call needed.
-      const { tokens: freshTokens } = useAuthStore.getState();
-      if (freshTokens?.accessToken) {
-        const freshSnap = await useSnapshotStore.getState().fetchSnapshot(freshTokens.accessToken)
-          .catch(err => console.warn('[Transfer] Post-transfer snapshot (non-fatal):', err));
-        if (freshSnap?.accounts) setAccounts(freshSnap.accounts);
-      }
+      // Use inline snapshot data from mutation response — updates balance in milliseconds
+      if (data.snapshot?.accounts) setAccounts(data.snapshot.accounts);
     } catch (err: any) {
       console.error('Transfer error:', err);
       setSubmitError(err.message || 'Transfer failed. Please try again.');

@@ -220,19 +220,8 @@ export default function AdminPanelPage() {
       if (!res.ok) throw new Error(data.error || 'Transaction failed');
       setTxSuccess(`${txForm.type === 'credit' ? 'Credited' : 'Debited'} ${parseFloat(txForm.amount).toLocaleString()} ${txForm.currency} to ${selectedUser?.fullName}`);
       setTxForm({ ...txForm, amount: '', description: '' });
-      // Force Blob sync + snapshot refresh so ALL users see updated balances instantly
-      // This ensures debited users see the deduction and credited users see the deposit
-      // in their dashboard, transfer page, and transaction history via unsnapshot.
-      try {
-        const snapRes = await fetch('/api/admin/snapshot', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (snapRes.ok) {
-          const snapData = await snapRes.json();
-          if (snapData.snapshot) setSnapshotTime(snapData.snapshot.timestamp);
-        }
-      } catch {}
+      // Inline snapshot data from mutation response — updates admin panel in milliseconds
+      if (data.snapshot?.timestamp) setSnapshotTime(data.snapshot.timestamp);
       await Promise.all([fetchUsers(token), fetchTransactions(token)]);
     } catch (err: any) {
       setTxSuccess(`❌ ${err.message}`);
