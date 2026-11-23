@@ -43,6 +43,20 @@ export default function TransferPage() {
     reference: '',
     purpose: '',
   });
+
+  // Derive the effective fromCurrency from the user's actual accounts
+  // If the user's country currency doesn't match any account, use the first available
+  const effectiveFromCurrency = (() => {
+    if (accounts.length === 0) return userCurrency;
+    const homeAcc = accounts.find(a => a.currency === userCurrency);
+    return homeAcc ? userCurrency : accounts[0].currency;
+  })();
+  // Sync form.fromCurrency to effectiveFromCurrency when accounts load
+  useEffect(() => {
+    if (accounts.length > 0 && form.fromCurrency !== effectiveFromCurrency) {
+      setForm(prev => ({ ...prev, fromCurrency: effectiveFromCurrency }));
+    }
+  }, [accounts.length, effectiveFromCurrency]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [receiptRef, setReceiptRef] = useState('');
@@ -217,7 +231,7 @@ export default function TransferPage() {
               <div className="flex justify-between text-sm"><span className="text-gray-500">Amount Sent</span><span className="text-white font-bold">{getCurrencySymbol(form.fromCurrency)}{parseFloat(form.amount).toLocaleString()}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Amount Received</span><span className="text-emerald-400 font-bold">{getCurrencySymbol(form.toCurrency)}{parseFloat(estimatedAmount).toLocaleString()}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Exchange Rate</span><span className="text-white">1 {form.fromCurrency} = {estimatedRate} {form.toCurrency}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Fee</span><span className="text-white">${fee}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Fee</span><span className="text-white">{getCurrencySymbol(form.fromCurrency)}{parseFloat(fee).toFixed(2)}</span></div>
               <div className="border-t border-bybit-border my-2" />
               <div className="flex justify-between text-sm"><span className="text-gray-500">Beneficiary</span><span className="text-white font-medium">{form.beneficiaryName}</span></div>
               <div className="flex justify-between text-sm"><span className="text-gray-500">Bank</span><span className="text-white font-medium text-xs">{form.bankName || form.swift}</span></div>
@@ -386,7 +400,7 @@ export default function TransferPage() {
                 <div className="p-4 rounded-xl bg-bybit-elevated/50 border border-bybit-border space-y-2">
                   <div className="flex justify-between text-sm"><span className="text-gray-500">Exchange Rate</span><span className="text-white font-mono">1 {form.fromCurrency} = {estimatedRate} {form.toCurrency}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-500">You Receive</span><span className="text-emerald-400 font-bold">{CURRENCY_SYMBOLS[form.toCurrency]}{parseFloat(estimatedAmount).toLocaleString()}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-500">Transfer Fee (0.1%)</span><span className="text-white">{getCurrencySymbol(form.fromCurrency)}{fee}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">Transfer Fee (0.1%)</span><span className="text-white">{getCurrencySymbol(form.fromCurrency)}{parseFloat(fee).toFixed(2)}</span></div>
                   <div className="flex justify-between text-sm pt-2 border-t border-bybit-border"><span className="text-gray-500">Total Debit</span><span className="text-white font-bold">{getCurrencySymbol(form.fromCurrency)}{(parseFloat(form.amount) + parseFloat(fee)).toLocaleString()}</span></div>
                 </div>
               )}
