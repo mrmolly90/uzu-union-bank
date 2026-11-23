@@ -155,50 +155,63 @@ async function downloadFromBlob(): Promise<void> {
   const storeId = process.env.BLOB_STORE_ID;
   if (!blobToken || !storeId) throw new Error('Blob not configured');
 
-  // First try head() + authenticated fetch
-  let blobBuffer: Buffer | null = null;
-  try {
-    const meta = await head(BLOB_DB_KEY, { token: blobToken, storeId }) as any;
-    if (meta?.downloadUrl) {
-      const response = await fetch(meta.downloadUrl, {
-        headers: { Authorization: `Bearer ${blobToken}` },
-      });
-      if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        blobBuffer = Buffer.from(arrayBuffer);
+  // Retry up to 3 times with backoff for network resilience
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      // First try head() + authenticated fetch
+      let blobBuffer: Buffer | null = null;
+      try {
+        const meta = await head(BLOB_DB_KEY, { token: blobToken, storeId }) as any;
+        if (meta?.downloadUrl) {
+          const response = await fetch(meta.downloadUrl, {
+            headers: { Authorization: `Bearer ${blobToken}` },
+          });
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            blobBuffer = Buffer.from(arrayBuffer);
+          }
+        }
+      } catch { /* fall through */ }
+
+      // Fallback: get() with stream
+      if (!blobBuffer || blobBuffer.length <= 4096) {
+        try {
+          const blobResult = await get(BLOB_DB_KEY, {
+            access: 'private',
+            token: blobToken,
+            storeId,
+          });
+          if (blobResult?.stream) {
+            const reader = blobResult.stream.getReader();
+            const chunks: Uint8Array[] = [];
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+            }
+            const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+            if (totalLength > 4096) blobBuffer = Buffer.concat(chunks);
+          }
+        } catch { /* fall through */ }
+      }
+
+      if (blobBuffer && blobBuffer.length > 4096) {
+        fs.writeFileSync(TMP_DB_PATH, blobBuffer);
+        console.log('[Prisma] Downloaded DB from Blob (' + blobBuffer.length + ' bytes)');
+        writeSyncMarker(blobBuffer.length);
+        return;
+      }
+      throw new Error('Blob empty or unavailable (attempt ' + (attempt + 1) + ')');
+    } catch (err) {
+      lastError = err;
+      if (attempt < 2) {
+        console.log('[Prisma] Blob download attempt ' + (attempt + 1) + ' failed, retrying...');
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
       }
     }
-  } catch { /* fall through */ }
-
-  // Fallback: get() with stream
-  if (!blobBuffer || blobBuffer.length <= 4096) {
-    try {
-      const blobResult = await get(BLOB_DB_KEY, {
-        access: 'private',
-        token: blobToken,
-        storeId,
-      });
-      if (blobResult?.stream) {
-        const reader = blobResult.stream.getReader();
-        const chunks: Uint8Array[] = [];
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-        }
-        const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-        if (totalLength > 4096) blobBuffer = Buffer.concat(chunks);
-      }
-    } catch { /* fall through */ }
   }
-
-  if (blobBuffer && blobBuffer.length > 4096) {
-    fs.writeFileSync(TMP_DB_PATH, blobBuffer);
-    console.log('[Prisma] Downloaded DB from Blob (' + blobBuffer.length + ' bytes)');
-    writeSyncMarker(blobBuffer.length);
-    return;
-  }
-  throw new Error('Blob empty or unavailable');
+  throw lastError || new Error('Blob download failed after 3 attempts');
 }
 
 /** Copy the build-time seeded DB to /tmp/ as a fallback. */
@@ -328,6 +341,12 @@ export async function getPrisma(): Promise<PrismaClient> {
           console.log('[Prisma] Blob is newer than local DB, re-downloading...');
           await globalForPrisma.prisma.$disconnect().catch(() => {});
           globalForPrisma.prisma = undefined as unknown as PrismaClient;
+          // Re-download fresh DB from Blob
+          try {
+            await downloadFromBlob();
+          } catch {
+            copyBuildDbToTmp();
+          }
         }
       } catch {
         // If blob check fails, continue with current client — safe default
@@ -336,25 +355,24 @@ export async function getPrisma(): Promise<PrismaClient> {
     if (globalForPrisma.prisma) return globalForPrisma.prisma;
   }
 
-  // Cold start or blob-triggered refresh — download from Blob
-  // Skip if local DB is valid (> 4KB). Blob is the fallback, not the source of truth.
-  // This prevents a corrupted Blob from overwriting a working local DB.
-  const localDbExists = fs.existsSync(TMP_DB_PATH);
-  const localDbValid = localDbExists && fs.statSync(TMP_DB_PATH).size > 4096;
+  // Cold start — download from Blob with retry
+  if (process.env.VERCEL) {
+    const localDbExists = fs.existsSync(TMP_DB_PATH);
+    const localDbValid = localDbExists && fs.statSync(TMP_DB_PATH).size > 4096;
 
-  if (process.env.VERCEL && !localDbValid) {
-    try {
-      await downloadFromBlob();
-    } catch {
-      // Blob unavailable — use seed DB
-      copyBuildDbToTmp();
-      // Force seed the DB by syncing the seed to blob for next time
-      try { await syncDbToBlob(); } catch {}
+    if (!localDbValid) {
+      // No valid local DB — try Blob, fall back to seed
+      try {
+        await downloadFromBlob();
+        console.log('[Prisma] Cold start: restored from Blob');
+      } catch {
+        console.log('[Prisma] Cold start: Blob unavailable, using seed DB');
+        copyBuildDbToTmp();
+        // Sync seed DB to Blob so next cold start has data
+        try { await syncDbToBlob(); } catch {}
+      }
     }
-  } else if (process.env.VERCEL && localDbValid) {
-    // Local DB is valid — keep it. This prevents corrupted Blob from overwriting.
-    // Blob is a cold-start backup, not a write-through cache.
-    // On each write, syncDbToBlob() will update the Blob for other instances.
+    // Local DB is valid — keep it. Blob is a cold-start backup.
   }
 
   const client = createPrismaClient();
