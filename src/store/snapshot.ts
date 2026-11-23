@@ -6,6 +6,7 @@
    ========================================================================== */
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { DbSnapshot } from '@/lib/dbSnapshot';
 
 interface SnapshotState {
@@ -26,43 +27,54 @@ interface SnapshotState {
   setSnapshot: (snapshot: DbSnapshot) => void;
 }
 
-export const useSnapshotStore = create<SnapshotState>()((set) => ({
-  snapshot: null,
-  loading: false,
-  error: null,
-  lastFetched: null,
+export const useSnapshotStore = create<SnapshotState>()(
+  persist(
+    (set) => ({
+      snapshot: null,
+      loading: false,
+      error: null,
+      lastFetched: null,
 
-  fetchSnapshot: async (accessToken: string) => {
-    set({ loading: true, error: null });
-    try {
-      const res = await fetch('/api/snapshot', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: 'Failed to fetch snapshot' }));
-        throw new Error(errData.error || 'Failed to fetch snapshot');
-      }
-      const data = await res.json();
-      const snapshot = data.snapshot as DbSnapshot;
-      set({
-        snapshot,
-        loading: false,
-        error: null,
-        lastFetched: snapshot.timestamp,
-      });
-      return snapshot;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to fetch snapshot';
-      set({ loading: false, error: msg });
-      throw err;
+      fetchSnapshot: async (accessToken: string) => {
+        set({ loading: true, error: null });
+        try {
+          const res = await fetch('/api/snapshot', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({ error: 'Failed to fetch snapshot' }));
+            throw new Error(errData.error || 'Failed to fetch snapshot');
+          }
+          const data = await res.json();
+          const snapshot = data.snapshot as DbSnapshot;
+          set({
+            snapshot,
+            loading: false,
+            error: null,
+            lastFetched: snapshot.timestamp,
+          });
+          return snapshot;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Failed to fetch snapshot';
+          set({ loading: false, error: msg });
+          throw err;
+        }
+      },
+
+      clearSnapshot: () => {
+        set({ snapshot: null, loading: false, error: null, lastFetched: null });
+      },
+
+      setSnapshot: (snapshot: DbSnapshot) => {
+        set({ snapshot, lastFetched: snapshot.timestamp, error: null });
+      },
+    }),
+    {
+      name: 'uzu-snapshot',
+      partialize: (state) => ({
+        snapshot: state.snapshot,
+        lastFetched: state.lastFetched,
+      }),
     }
-  },
-
-  clearSnapshot: () => {
-    set({ snapshot: null, loading: false, error: null, lastFetched: null });
-  },
-
-  setSnapshot: (snapshot: DbSnapshot) => {
-    set({ snapshot, lastFetched: snapshot.timestamp, error: null });
-  },
-}));
+  )
+);

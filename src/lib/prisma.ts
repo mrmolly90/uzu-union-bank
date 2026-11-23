@@ -357,31 +357,8 @@ export async function getPrisma(): Promise<PrismaClient> {
     // On each write, syncDbToBlob() will update the Blob for other instances.
   }
 
-  // ── Schema Migration (Runtime) ─────────────────────────────────────────
-  // The Blob-stored DB may have an older schema (missing new columns like
-  // transferPaused). We run ALTER TABLE via raw Prisma query AFTER creating
-  // the client, catching the error if the column already exists.
   const client = createPrismaClient();
   globalForPrisma.prisma = client;
-
-  try {
-    await client.$executeRawUnsafe(
-      `ALTER TABLE User ADD COLUMN transferPaused BOOLEAN NOT NULL DEFAULT false`
-    );
-    console.log('[Prisma] Schema migrated: added transferPaused column');
-  } catch {
-    // Column already exists or SQLite doesn't support BOOLEAN ADD COLUMN
-    // with NOT NULL — try INTEGER variant
-    try {
-      await client.$executeRawUnsafe(
-        `ALTER TABLE User ADD COLUMN transferPaused INTEGER NOT NULL DEFAULT 0`
-      );
-      console.log('[Prisma] Schema migrated: added transferPaused (INTEGER)');
-    } catch {
-      // Column already exists — safe to ignore
-    }
-  }
-
   return client;
 }
 

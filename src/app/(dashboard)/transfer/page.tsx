@@ -73,15 +73,23 @@ export default function TransferPage() {
     try {
       const { tokens } = useAuthStore.getState();
       if (!tokens?.accessToken) return;
-      // Use snapshot as the SOLE source of truth for balances
+      // Try snapshot first, fallback to API
       const snap = useSnapshotStore.getState().snapshot;
       if (snap?.accounts) {
         setAccounts(snap.accounts);
         return;
       }
-      // Fallback: fetch fresh snapshot
-      const freshSnap = await useSnapshotStore.getState().fetchSnapshot(tokens.accessToken);
-      if (freshSnap?.accounts) setAccounts(freshSnap.accounts);
+      const freshSnap = await useSnapshotStore.getState().fetchSnapshot(tokens.accessToken).catch(() => null);
+      if (freshSnap?.accounts) {
+        setAccounts(freshSnap.accounts);
+        return;
+      }
+      // Final fallback: API
+      const res = await fetch('/api/accounts', { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data);
+      }
     } catch (err) { console.error('Fetch accounts error:', err); }
   };
 

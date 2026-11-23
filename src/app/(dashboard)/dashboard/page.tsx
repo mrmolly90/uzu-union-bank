@@ -149,13 +149,12 @@ export default function DashboardPage() {
       if (!tokens?.accessToken) return;
       const headers = { Authorization: `Bearer ${tokens.accessToken}` };
 
-      // Fetch DB snapshot — this is the EXCLUSIVE source of truth for balances.
-      // The snapshot reads directly from DB, bypassing all cached state.
-      // On page reload, this ensures the exact DB balance is displayed.
+      // Fetch DB snapshot — this is the PRIMARY source of truth for balances.
+      // Falls back to /api/accounts if snapshot is unavailable.
       const snapshotResult = await useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
         .catch(err => { console.warn('[Dashboard] Snapshot fetch (non-fatal):', err); return null; });
 
-      // Use snapshot accounts as the SOLE source of truth for balances
+      // Use snapshot accounts as primary source, fallback to API
       if (snapshotResult?.accounts) {
         setAccounts(snapshotResult.accounts);
         const countryCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
@@ -164,13 +163,24 @@ export default function DashboardPage() {
         else if (snapshotResult.accounts.length > 0) setActiveAccount(snapshotResult.accounts[0].currency);
       }
 
-      // Fetch other data in parallel (not balances — those come from snapshot)
-      const [txRes, ratesRes, notifRes, cryptoRes] = await Promise.all([
+      // Fetch other data in parallel
+      const [accountsRes, txRes, ratesRes, notifRes, cryptoRes] = await Promise.all([
+        fetch('/api/accounts', { headers }),
         fetch('/api/transactions', { headers }),
         fetch('/api/rates'),
         fetch('/api/notifications', { headers }),
         fetch('/api/crypto/addresses'),
       ]);
+
+      // Fallback: if snapshot failed, use API accounts
+      if (!snapshotResult?.accounts && accountsRes.ok) {
+        const data = await accountsRes.json();
+        setAccounts(data);
+        const countryCurrency = getCurrencyByCountryCode(user?.countryCode || 'US');
+        const matchingAccount = data.find((a: any) => a.currency === countryCurrency);
+        if (matchingAccount) setActiveAccount(countryCurrency);
+        else if (data.length > 0) setActiveAccount(data[0].currency);
+      }
 
       if (txRes.ok) { const data = await txRes.json(); setTransactions(data); }
       if (ratesRes.ok) { const data = await ratesRes.json(); setRates(data); }

@@ -29,10 +29,6 @@ export async function GET(req: NextRequest) {
     await resetPrisma();
     const prisma = await getPrisma();
 
-    // Ensure DB schema is up to date before taking snapshot
-    try { await prisma.$executeRawUnsafe(`ALTER TABLE User ADD COLUMN transferPaused BOOLEAN NOT NULL DEFAULT false`); } catch {}
-    try { await prisma.$executeRawUnsafe(`ALTER TABLE User ADD COLUMN transferPaused INTEGER NOT NULL DEFAULT 0`); } catch {}
-
     const snapshot = await takeAdminSnapshot();
 
     return NextResponse.json({
