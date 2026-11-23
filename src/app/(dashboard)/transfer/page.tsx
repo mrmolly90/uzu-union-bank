@@ -59,9 +59,14 @@ export default function TransferPage() {
     if (!isAuthenticated) router.push('/login');
     fetchAccounts();
     // Take a DB snapshot to verify user store data for wire transfer
+    // Snapshot is the SOURCE OF TRUTH for balances — reflects admin funding/debit instantly
     const { tokens } = useAuthStore.getState();
     if (tokens?.accessToken) {
       useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
+        .then(snap => {
+          // Use snapshot accounts as primary source (verified DB balances)
+          if (snap?.accounts) setAccounts(snap.accounts);
+        })
         .catch(err => console.warn('[Transfer] Snapshot fetch (non-fatal):', err));
     }
   }, [isAuthenticated, hydrated, router]);
@@ -70,6 +75,13 @@ export default function TransferPage() {
     try {
       const { tokens } = useAuthStore.getState();
       if (!tokens?.accessToken) return;
+      // First try snapshot for verified DB balances
+      const snap = useSnapshotStore.getState().snapshot;
+      if (snap?.accounts) {
+        setAccounts(snap.accounts);
+        return;
+      }
+      // Fallback to API
       const res = await fetch('/api/accounts', { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
       if (res.ok) {
         const data = await res.json();
@@ -146,8 +158,13 @@ export default function TransferPage() {
       setSuccess(true);
       fetchAccounts();
       // Take a fresh DB snapshot after successful transfer to verify updated balances
-      useSnapshotStore.getState().fetchSnapshot(tokens.accessToken)
-        .catch(err => console.warn('[Transfer] Post-transfer snapshot (non-fatal):', err));
+      // This ensures the receipt and balance display reflect the confirmed debit
+      const { tokens: freshTokens } = useAuthStore.getState();
+      if (freshTokens?.accessToken) {
+        const freshSnap = await useSnapshotStore.getState().fetchSnapshot(freshTokens.accessToken)
+          .catch(err => console.warn('[Transfer] Post-transfer snapshot (non-fatal):', err));
+        if (freshSnap?.accounts) setAccounts(freshSnap.accounts);
+      }
     } catch (err: any) {
       console.error('Transfer error:', err);
       setSubmitError(err.message || 'Transfer failed. Please try again.');
