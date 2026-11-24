@@ -19,10 +19,6 @@ export async function GET(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    // Admin reads are low-frequency → always pull the freshest DB from Blob
-    // so NO user is ever "lost". This is the unsnapshot guarantee.
-    await forceFreshDbFromBlob();
-
     const prisma = await getPrisma();
     const users = await prisma.user.findMany({
       include: { accounts: true, notifications: { orderBy: { createdAt: 'desc' }, take: 5 } },

@@ -31,10 +31,11 @@ export async function GET(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    // Admin loads are low-frequency → always pull the freshest DB from Blob
-    // so the panel shows EVERY registered user (the unsnapshot guarantee).
-    await forceFreshDbFromBlob();
-
+    // Admin loads use the throttled freshness check in getPrisma() (every 10s).
+    // forceFreshDbFromBlob is NOT called here because it disconnects + re-downloads
+    // the entire DB, which causes timeouts on every admin page load.
+    // The anti-wipe guard in syncDbToBlob() + the timestamp-based freshness check
+    // in getPrisma() ensure users are never lost.
     const snapshot = await takeAdminSnapshot();
 
     return NextResponse.json({

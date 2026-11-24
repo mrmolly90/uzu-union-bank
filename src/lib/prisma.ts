@@ -262,7 +262,10 @@ async function downloadFromBlob(): Promise<void> {
       if (blobBuffer && blobBuffer.length > 4096) {
         fs.writeFileSync(TMP_DB_PATH, blobBuffer);
         console.log('[Prisma] Downloaded DB from Blob (' + blobBuffer.length + ' bytes)');
-        writeSyncMarker(blobBuffer.length);
+        // CRITICAL: writeSyncMarker expects epoch-ms TIMESTAMP, not file size!
+        // Using Date.now() ensures isBlobNewerThanLocal() correctly compares
+        // against the Blob's uploadedAt timestamp.
+        writeSyncMarker(Date.now());
         return;
       }
       throw new Error('Blob empty or unavailable (attempt ' + (attempt + 1) + ')');
@@ -359,7 +362,7 @@ export async function forceFreshDbFromBlob(): Promise<void> {
   if (!blobToken || !storeId) return;
 
   try {
-    const localUsers = countLocalUsers();
+    const localUsers = await countLocalUsers();
     const blobMeta = await getBlobMeta();
     const blobUsers = blobMeta.size > 0 ? await countUsersInBlob(blobMeta) : -1;
 
@@ -402,16 +405,19 @@ export async function forceFreshDbFromBlob(): Promise<void> {
  * Count users in the local /tmp/ DB (authoritative signal for "who exists").
  * Returns -1 if the DB file is unavailable/invalid so callers can skip.
  */
-function countLocalUsers(): number {
+async function countLocalUsers(): Promise<number> {
   try {
     if (!fs.existsSync(TMP_DB_PATH) || fs.statSync(TMP_DB_PATH).size <= 4096) return -1;
     // Use a lightweight SQLite count via the @libsql client already installed.
     const { createClient } = require('@libsql/client');
     const client = createClient({ url: `file:${TMP_DB_PATH.replace(/\\/g, '/')}` });
-    const result = client.execute({ sql: 'SELECT COUNT(*) AS n FROM "User"', args: [] });
-    client.close();
-    const row = result.rows[0] as { n: number | bigint };
-    return Number(row?.n ?? 0);
+    try {
+      const result = await client.execute({ sql: 'SELECT COUNT(*) AS n FROM "User"', args: [] });
+      const row = result.rows[0] as { n: number | bigint };
+      return Number(row?.n ?? 0);
+    } finally {
+      client.close();
+    }
   } catch {
     return -1;
   }
@@ -441,7 +447,7 @@ export async function syncDbToBlob(): Promise<void> {
 
   // ─── ANTI-WIPE: if Blob is fresher, adopt it BEFORE uploading ───
   try {
-    const localUsers = countLocalUsers();
+    const localUsers = await countLocalUsers();
     if (localUsers >= 0) {
       const blobMeta = await getBlobMeta();
       if (blobMeta.size > 0) {

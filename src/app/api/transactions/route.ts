@@ -96,7 +96,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    // Auth check FIRST — before any DB call, so cold-start Blob download
+    // doesn't block the auth response and cause "invalid token" timeouts.
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'No token provided.' }, { status: 401 });
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
 
+    const prisma = await getPrisma();
     const body = await req.json();
     const parsed = transferSchema.safeParse(body);
     if (!parsed.success) {
