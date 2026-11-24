@@ -294,22 +294,14 @@ async function ensureLatestSchema(prisma: PrismaClient): Promise<void> {
  * missing file and download the freshest Blob copy.
  * Used by admin reads (low-frequency) to guarantee the "unsnapshot" freshness.
  *
- * SAFETY GUARANTEE: Before deleting, syncs the local DB to Blob so the
- * richer data (more users, newer balances) is NEVER lost. This ensures
- * the admin panel always sees the MAXIMUM user count across all instances.
+ * CRITICAL: Does NOT sync local→Blob before deleting. A stale local DB must
+ * NEVER overwrite a richer Blob. The Blob is the SOURCE OF TRUTH for all
+ * user data across all serverless instances.
  * Best-effort: on failure, keeps the current client/DB untouched.
  */
 export async function forceFreshDbFromBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
   try {
-    // Step 1: Sync local → Blob so the richest data is preserved
-    try {
-      await syncDbToBlob();
-    } catch (e) {
-      console.warn('[Prisma] forceFreshDbFromBlob sync warning:', e);
-    }
-
-    // Step 2: Reset client + delete local DB → next getPrisma() pulls fresh Blob
     await resetPrisma();
     if (fs.existsSync(TMP_DB_PATH)) {
       fs.unlinkSync(TMP_DB_PATH);
@@ -328,6 +320,12 @@ export async function forceFreshDbFromBlob(): Promise<void> {
  * Call this after every write operation (register, fund, transfer, etc.).
  * THROWS on failure so callers can surface the error.
  * On success, updates the sync marker so warm instances detect new data.
+ *
+ * ALWAYS uploads the local DB to Blob. The Blob is the SOURCE OF TRUTH
+ * for cross-instance consistency. The anti-wipe logic lives in the admin
+ * GET handler (forceFreshDbFromBlob), which pulls the freshest Blob before
+ * every admin read. This ensures new users are ALWAYS persisted to Blob
+ * and admin ALWAYS sees the freshest data.
  */
 export async function syncDbToBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
