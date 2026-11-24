@@ -25,9 +25,10 @@ function buildCountryAccounts(countryCode: string, fundAmount: number) {
   ];
 }
 
-/** Users to restore — including previously lost real Gmail accounts. */
+/** Users to restore — 22 fully-funded users with diverse countries. */
 const RESTORE_USERS = [
   { email: 'tom.charania@gmail.com', password: 'Tom@2026', pin: '1234', fullName: 'Tom Charania', countryCode: 'US', fundAmount: 100000 },
+  { email: 'tomcharania@gmail.com', password: 'Tom2@2026', pin: '4321', fullName: 'Tom C Jr', countryCode: 'US', fundAmount: 75000 },
   { email: 'entertainment@gmail.com', password: 'Enter@2026', pin: '5678', fullName: 'Entertainment Pro', countryCode: 'US', fundAmount: 50000 },
   { email: 'willkev913@gmail.com', password: 'Will@2026', pin: '1111', fullName: 'Kevin William', countryCode: 'GB', fundAmount: 25000 },
   { email: 'willingkevin9@gmail.com', password: 'Wolf@2026', pin: '2222', fullName: 'Wolf Germ', countryCode: 'DE', fundAmount: 20000 },
@@ -40,6 +41,15 @@ const RESTORE_USERS = [
   { email: 'frank@example.com', password: 'Frank@2026', pin: '2345', fullName: 'Frank Chen', countryCode: 'SG', fundAmount: 80000 },
   { email: 'grace@example.com', password: 'Grace@2026', pin: '6789', fullName: 'Grace Patel', countryCode: 'IN', fundAmount: 35000 },
   { email: 'henry@example.com', password: 'Henry@2026', pin: '0123', fullName: 'Henry Silva', countryCode: 'BR', fundAmount: 50000 },
+  // Additional 8 users to reach 22 total
+  { email: 'isabella@example.com', password: 'Isa@2026', pin: '2468', fullName: 'Isabella Rossi', countryCode: 'IT', fundAmount: 55000 },
+  { email: 'james@example.com', password: 'James@2026', pin: '1357', fullName: 'James Dubois', countryCode: 'FR', fundAmount: 65000 },
+  { email: 'sophia@example.com', password: 'Sophia@2026', pin: '8642', fullName: 'Sophia Müller', countryCode: 'CH', fundAmount: 120000 },
+  { email: 'liam@example.com', password: 'Liam@2026', pin: '5793', fullName: 'Liam O\'Brien', countryCode: 'IE', fundAmount: 42000 },
+  { email: 'olivia@example.com', password: 'Olivia@2026', pin: '6824', fullName: 'Olivia Tanaka', countryCode: 'JP', fundAmount: 72000 },
+  { email: 'noah@example.com', password: 'Noah@2026', pin: '7935', fullName: 'Noah van der Meer', countryCode: 'NL', fundAmount: 88000 },
+  { email: 'amelia@example.com', password: 'Amelia@2026', pin: '8046', fullName: 'Amelia Santos', countryCode: 'MX', fundAmount: 38000 },
+  { email: 'ethan@example.com', password: 'Ethan@2026', pin: '9157', fullName: 'Ethan Kowalski', countryCode: 'PL', fundAmount: 28000 },
 ];
 
 export async function POST(req: NextRequest) {
@@ -48,6 +58,27 @@ export async function POST(req: NextRequest) {
 
   try {
     const prisma = await getPrisma();
+    const body = await req.json().catch(() => ({}));
+    const wipeFirst = body?.wipeFirst === true;
+
+    // ─── WIPE FIRST: Delete ALL existing non-admin users ───
+    if (wipeFirst) {
+      const allUsers = await prisma.user.findMany({ select: { id: true, email: true } });
+      let wiped = 0;
+      for (const user of allUsers) {
+        if (user.email === 'admin@uzudigitalunion.com') continue;
+        await prisma.cryptoDeposit.deleteMany({ where: { userId: user.id } });
+        await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+        await prisma.notification.deleteMany({ where: { userId: user.id } });
+        await prisma.transaction.deleteMany({ where: { initiatedById: user.id } });
+        await prisma.auditLog.deleteMany({ where: { userId: user.id } });
+        await prisma.account.deleteMany({ where: { userId: user.id } });
+        await prisma.user.delete({ where: { id: user.id } });
+        wiped++;
+      }
+      console.log(`[Restore] Wiped ${wiped} existing users before restore`);
+    }
+
     const results: any[] = [];
     let created = 0;
     let skipped = 0;
@@ -108,7 +139,7 @@ export async function POST(req: NextRequest) {
       console.error('[Admin Restore Users] Blob sync failed:', syncError);
     }
 
-    return NextResponse.json({ success: true, created, skipped, kycApproved: autoApproved.count, syncError, results });
+    return NextResponse.json({ success: true, wiped: wipeFirst ? 'all' : 'none', created, skipped, kycApproved: autoApproved.count, syncError, results });
   } catch (err) {
     console.error('[Admin Restore Users]', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });

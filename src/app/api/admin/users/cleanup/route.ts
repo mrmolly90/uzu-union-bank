@@ -30,6 +30,14 @@ const REAL_USER_EMAILS = [
   'frank@example.com',
   'grace@example.com',
   'henry@example.com',
+  'isabella@example.com',
+  'james@example.com',
+  'sophia@example.com',
+  'liam@example.com',
+  'olivia@example.com',
+  'noah@example.com',
+  'amelia@example.com',
+  'ethan@example.com',
 ];
 
 export async function POST(req: NextRequest) {
