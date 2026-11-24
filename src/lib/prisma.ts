@@ -72,51 +72,6 @@ async function getBlobMeta(): Promise<{ size: number; uploadedAt: number }> {
   } catch { return { size: 0, uploadedAt: 0 }; }
 }
 
-/**
- * Download the Blob DB into memory (without writing to /tmp) and COUNT the
- * user rows. Used by the anti-wipe guard to compare user counts between the
- * local /tmp DB and the Blob copy. Returns -1 on any failure.
- */
-async function countUsersInBlob(meta: { size: number; uploadedAt: number }): Promise<number> {
-  if (meta.size <= 0) return -1;
-  try {
-    const { createClient } = require('@libsql/client');
-    const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-    const storeId = process.env.BLOB_STORE_ID;
-    const blobResult = await get(BLOB_DB_KEY, {
-      access: 'private',
-      token: blobToken,
-      storeId,
-    });
-    if (!blobResult?.stream) return -1;
-    const reader = blobResult.stream.getReader();
-    const chunks: Uint8Array[] = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-    if (totalLength <= 4096) return -1;
-    const buffer = Buffer.concat(chunks);
-
-    // Write to a temp file so @libsql can open it read-only.
-    const tmpCountPath = path.join(TMP_DB_DIR, 'blob_count_tmp.db');
-    fs.writeFileSync(tmpCountPath, buffer);
-    const client = createClient({ url: `file:${tmpCountPath.replace(/\\/g, '/')}` });
-    try {
-      const result = await client.execute({ sql: 'SELECT COUNT(*) AS n FROM "User"', args: [] });
-      const row = result.rows[0] as { n: number | bigint };
-      return Number(row?.n ?? -1);
-    } finally {
-      client.close();
-      fs.unlinkSync(tmpCountPath);
-    }
-  } catch {
-    return -1;
-  }
-}
-
 /** Enable SQLite WAL mode for concurrent read safety. */
 function enableWAL(): void {
   if (!fs.existsSync(TMP_DB_PATH)) return;
@@ -146,17 +101,7 @@ async function isBlobNewerThanLocal(): Promise<boolean> {
   return localLastSync <= 0 || blobUploadedAt > localLastSync;
 }
 
-/** Enable WAL mode on the SQLite database for concurrent read-safety. */
-function ensureWAL(): void {
-  if (!fs.existsSync(TMP_DB_PATH) || fs.statSync(TMP_DB_PATH).size < 100) return;
-  try {
-    // Opening a connection to set WAL mode. This is done before Prisma connects.
-    const { execSync } = require('child_process');
-    const dbPath = TMP_DB_PATH.replace(/\\/g, '/');
-    // Use a simple synchronous pragma via a temp node script for WAL mode
-    // If it fails, the DB still works (just without WAL)
-  } catch { /* non-critical */ }
-}
+
 
 /** PrismaClient constructor with WAL pragma. */
 function createPrismaClient(): PrismaClient {
@@ -344,95 +289,10 @@ async function ensureLatestSchema(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Force a fresh download of the Blob DB into /tmp/ and reset the Prisma
- * client so the NEXT getPrisma() call reads the freshest data.
- * Used by admin reads (which are low-frequency) to guarantee the
- * "unsnapshot" freshness — every admin load reflects ALL registered users.
- *
- * ANTI-LOSS GUARANTEE: The Blob copy is ONLY adopted when it contains MORE
- * users than the current local /tmp/ DB (or local is invalid). A stale or
- * empty Blob NEVER overwrites a richer local DB, so no user is ever lost.
- *
- * Best-effort: on any failure, keeps the current client/DB untouched.
- */
-export async function forceFreshDbFromBlob(): Promise<void> {
-  if (!process.env.VERCEL) return;
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  const storeId = process.env.BLOB_STORE_ID;
-  if (!blobToken || !storeId) return;
-
-  try {
-    const localUsers = await countLocalUsers();
-    const blobMeta = await getBlobMeta();
-    const blobUsers = blobMeta.size > 0 ? await countUsersInBlob(blobMeta) : -1;
-
-    if (blobUsers > localUsers) {
-      // Blob is RICHER → adopt it so ALL users (including ones we don't have)
-      // appear in this instance's admin panel.
-      console.log(
-        `[Prisma] forceFreshDbFromBlob: blob=${blobUsers} users > local=${localUsers} — adopting fresher Blob`
-      );
-      if (globalForPrisma.prisma) {
-        await globalForPrisma.prisma.$disconnect().catch(() => {});
-        globalForPrisma.prisma = undefined as unknown as PrismaClient;
-      }
-      await downloadFromBlob();
-    } else if (localUsers > blobUsers && blobUsers >= 0) {
-      // Local is RICHER than Blob → propagate local to Blob so every other
-      // instance sees ALL users too. This is the true "restore users" fix.
-      console.log(
-        `[Prisma] forceFreshDbFromBlob: local=${localUsers} users > blob=${blobUsers} — propagating richer local to Blob`
-      );
-      await syncDbToBlob(); // syncDbToBlob has its own anti-wipe guard
-    } else {
-      // Equal (or Blob invalid) — nothing to do; local is already authoritative.
-      console.log(
-        `[Prisma] forceFreshDbFromBlob: local=${localUsers} users, blob=${blobUsers} — DBs in sync`
-      );
-    }
-  } catch (err) {
-    console.error('[Prisma] forceFreshDbFromBlob non-fatal:', err instanceof Error ? err.message : String(err));
-  }
-}
-
-/**
  * Persist the current /tmp/ DB back to Vercel Blob.
  * Call this after every write operation (register, fund, transfer, etc.).
  * THROWS on failure so callers can surface the error.
  * On success, updates the sync marker so warm instances detect new data.
- */
-/**
- * Count users in the local /tmp/ DB (authoritative signal for "who exists").
- * Returns -1 if the DB file is unavailable/invalid so callers can skip.
- */
-async function countLocalUsers(): Promise<number> {
-  try {
-    if (!fs.existsSync(TMP_DB_PATH) || fs.statSync(TMP_DB_PATH).size <= 4096) return -1;
-    // Use a lightweight SQLite count via the @libsql client already installed.
-    const { createClient } = require('@libsql/client');
-    const client = createClient({ url: `file:${TMP_DB_PATH.replace(/\\/g, '/')}` });
-    try {
-      const result = await client.execute({ sql: 'SELECT COUNT(*) AS n FROM "User"', args: [] });
-      const row = result.rows[0] as { n: number | bigint };
-      return Number(row?.n ?? 0);
-    } finally {
-      client.close();
-    }
-  } catch {
-    return -1;
-  }
-}
-
-/**
- * Persist the current /tmp/ DB back to Vercel Blob — SAFELY.
- *
- * ANTI-WIPE GUARANTEE (this is what keeps "new users" from being lost):
- * Before uploading, count users in the LOCAL DB. If the local DB has FEWER
- * users than the Blob copy (i.e. a stale instance is about to overwrite
- * newer data), pull the fresher Blob FIRST and rebuild the client, so we
- * never clobber registrations made on another instance.
- *
- * Throws on total failure so callers can surface the error.
  */
 export async function syncDbToBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
@@ -445,28 +305,7 @@ export async function syncDbToBlob(): Promise<void> {
     throw new Error('BLOB_STORE_ID not set, cannot sync DB to Blob');
   }
 
-  // ─── ANTI-WIPE: if Blob is fresher, adopt it BEFORE uploading ───
-  try {
-    const localUsers = await countLocalUsers();
-    if (localUsers >= 0) {
-      const blobMeta = await getBlobMeta();
-      if (blobMeta.size > 0) {
-        const blobUsers = await countUsersInBlob(blobMeta);
-        // A stale local DB (fewer users) must NOT overwrite the richer Blob.
-        if (blobUsers > 0 && blobUsers > localUsers) {
-          console.log(`[Prisma] Blob has ${blobUsers} users > local ${localUsers} — pulling fresher Blob before sync`);
-          await downloadFromBlob();
-          await resetPrisma();
-          // After re-download, the local DB now matches Blob (both have blobUsers).
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[Prisma] Anti-wipe check failed (non-fatal):', err instanceof Error ? err.message : String(err));
-  }
-
   const buffer = fs.readFileSync(TMP_DB_PATH);
-
   await put(BLOB_DB_KEY, buffer, {
     access: 'private',
     token: blobToken,
@@ -476,8 +315,6 @@ export async function syncDbToBlob(): Promise<void> {
     contentType: 'application/octet-stream',
   });
 
-  // Update sync marker with the CURRENT epoch-ms so warm instances on other
-  // nodes detect the fresh upload regardless of file size.
   writeSyncMarker(Date.now());
   console.log('[Prisma] Synced DB to Blob (' + buffer.length + ' bytes)');
 }

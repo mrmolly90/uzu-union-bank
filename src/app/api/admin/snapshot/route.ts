@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, forceFreshDbFromBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 import { takeAdminSnapshot } from '@/lib/dbSnapshot';
 
