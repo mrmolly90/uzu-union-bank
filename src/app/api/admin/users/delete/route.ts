@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-    // Delete all user data
+    // Delete all user data (cryptoDeposits first to satisfy FK constraints)
+    await prisma.cryptoDeposit.deleteMany({ where: { userId } });
     await prisma.refreshToken.deleteMany({ where: { userId } });
     await prisma.notification.deleteMany({ where: { userId } });
     await prisma.transaction.deleteMany({ where: { initiatedById: userId } });

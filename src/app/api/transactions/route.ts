@@ -6,6 +6,23 @@ import { formatExactAmount } from '@/lib/format';
 import { transferSchema } from '@/lib/validations';
 import { takeUserSnapshot } from '@/lib/dbSnapshot';
 
+/**
+ * Retry a function up to `maxRetries` times with exponential backoff.
+ * Used to handle cold-start DB restore races on serverless.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries - 1) throw err;
+      console.error(`[Transactions] Retry ${attempt + 1}/${maxRetries} failed:`, err instanceof Error ? err.message : String(err));
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  throw new Error('All retries exhausted');
+}
+
 /** Fallback FX rates used when the database doesn't have a pair. */
 const FALLBACK_RATES: Record<string, number> = {
   'USD': 1, 'EUR': 0.9222, 'GBP': 0.7920, 'JPY': 149.94, 'CHF': 0.8806,
@@ -51,7 +68,6 @@ async function lookupRate(
 
 export async function GET(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'No token provided.' }, { status: 401 });
@@ -62,10 +78,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
 
-    const transactions = await prisma.transaction.findMany({
-      where: { initiatedById: decoded.sub },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
+    const transactions = await withRetry(async () => {
+      const prisma = await getPrisma();
+      return prisma.transaction.findMany({
+        where: { initiatedById: decoded.sub },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
     });
 
     return NextResponse.json(transactions);

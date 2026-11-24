@@ -235,6 +235,49 @@ function copyBuildDbToTmp(): void {
 }
 
 /**
+ * Ensure the latest schema exists in the local /tmp/ SQLite database.
+ * The Blob-stored DB may be from an OLD deployment without newer tables
+ * (e.g. CryptoDeposit). Running lightweight CREATE TABLE IF NOT EXISTS
+ * statements after every Blob download guarantees schema parity.
+ * Uses the Prisma client's raw executor (async-safe, no fragile shell scripts).
+ */
+async function ensureLatestSchema(prisma: PrismaClient): Promise<void> {
+  try {
+    // CREATE TABLE IF NOT EXISTS is safe to run on every instance
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "CryptoDeposit" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "symbol" TEXT NOT NULL,
+        "amount" TEXT NOT NULL,
+        "blockchainTxHash" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'PENDING',
+        "adminId" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        CONSTRAINT "CryptoDeposit_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `).catch(() => { /* table may already exist — safe to ignore */ });
+
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "CryptoDeposit_userId_idx" ON "CryptoDeposit"("userId")`
+    ).catch(() => {});
+
+    // Transfer paused column may be missing on older Blob DBs
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "User" ADD COLUMN "transferPaused" BOOLEAN NOT NULL DEFAULT false`
+    ).catch((e) => {
+      // Ignore duplicate-column errors — column already exists
+      if (!String(e?.message || e).toLowerCase().includes('duplicate column')) {
+        console.error('[Prisma] transferPaused ALTER failed (non-fatal):', e?.message || e);
+      }
+    });
+  } catch (err) {
+    console.error('[Prisma] ensureLatestSchema non-fatal error:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
  * Persist the current /tmp/ DB back to Vercel Blob.
  * Call this after every write operation (register, fund, transfer, etc.).
  * THROWS on failure so callers can surface the error.
@@ -330,26 +373,38 @@ export async function checkDbHealth(): Promise<{
   return result;
 }
 
-/** Get the Prisma client singleton with cross-instance consistency. */
+/** Throttle window for warm-instance Blob freshness checks (ms). */
+const BLOB_CHECK_INTERVAL = 10_000;
+let lastBlobCheck = 0;
+
+/**
+ * Get the Prisma client singleton with cross-instance consistency.
+ * Warm instances reuse the existing client and only check Blob freshness
+ * every 10s (throttled) to avoid head() latency on every request.
+ */
 export async function getPrisma(): Promise<PrismaClient> {
-  // Warm instance with existing client — check if Blob has fresher data
+  // Warm instance with existing client
   if (globalForPrisma.prisma) {
     if (process.env.VERCEL) {
-      try {
-        const blobNewer = await isBlobNewerThanLocal();
-        if (blobNewer) {
-          console.log('[Prisma] Blob is newer than local DB, re-downloading...');
-          await globalForPrisma.prisma.$disconnect().catch(() => {});
-          globalForPrisma.prisma = undefined as unknown as PrismaClient;
-          // Re-download fresh DB from Blob
-          try {
-            await downloadFromBlob();
-          } catch {
-            copyBuildDbToTmp();
+      const now = Date.now();
+      // Throttle Blob check to once per 10s — reduces latency on every request
+      if (now - lastBlobCheck > BLOB_CHECK_INTERVAL) {
+        lastBlobCheck = now;
+        try {
+          const blobNewer = await isBlobNewerThanLocal();
+          if (blobNewer) {
+            console.log('[Prisma] Blob is newer than local DB, re-downloading...');
+            await globalForPrisma.prisma.$disconnect().catch(() => {});
+            globalForPrisma.prisma = undefined as unknown as PrismaClient;
+            try {
+              await downloadFromBlob();
+            } catch {
+              copyBuildDbToTmp();
+            }
           }
+        } catch {
+          // If blob check fails, continue with current client — safe default
         }
-      } catch {
-        // If blob check fails, continue with current client — safe default
       }
     }
     if (globalForPrisma.prisma) return globalForPrisma.prisma;
@@ -376,6 +431,9 @@ export async function getPrisma(): Promise<PrismaClient> {
   }
 
   const client = createPrismaClient();
+  // Ensure the latest schema (CryptoDeposit table, transferPaused column)
+  // exists in the restored DB — old Blob snapshots may lack them.
+  await ensureLatestSchema(client);
   globalForPrisma.prisma = client;
   return client;
 }

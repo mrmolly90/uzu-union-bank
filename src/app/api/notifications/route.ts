@@ -2,18 +2,37 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
+/**
+ * Retry a function up to `maxRetries` times with exponential backoff.
+ * Used to handle cold-start DB restore races on serverless.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries - 1) throw err;
+      console.error(`[Notifications] Retry ${attempt + 1}/${maxRetries} failed:`, err instanceof Error ? err.message : String(err));
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
+  }
+  throw new Error('All retries exhausted');
+}
+
 export async function GET(req: NextRequest) {
   try {
-    const prisma = await getPrisma();
     const auth = req.headers.get('authorization');
     if (!auth?.startsWith('Bearer ')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const decoded = verifyAccessToken(auth.slice(7));
     if (!decoded) return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
 
-    const notifications = await prisma.notification.findMany({
-      where: { userId: decoded.sub },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
+    const notifications = await withRetry(async () => {
+      const prisma = await getPrisma();
+      return prisma.notification.findMany({
+        where: { userId: decoded.sub },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
     });
 
     return NextResponse.json(notifications);

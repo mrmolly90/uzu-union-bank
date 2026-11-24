@@ -7,6 +7,7 @@ const requiredTables = [
   'Admin',
   'AuditLog',
   'CryptoAddress',
+  'CryptoDeposit',
   'ExchangeRate',
   'Notification',
   'RefreshToken',

@@ -272,6 +272,7 @@ export interface AdminSnapshot {
     pendingTransactions: number;
     settledTransactions: number;
     verifiedKyc: number;
+    pendingCryptoDeposits: number;
   };
   verificationHash: string;
 }
@@ -286,7 +287,7 @@ export async function takeAdminSnapshot(): Promise<AdminSnapshot> {
   const timestamp = new Date().toISOString();
 
   // Fetch all users with accounts and notification counts in parallel
-  const [allUsers, pendingTxCount, settledTxCount] = await Promise.all([
+  const [allUsers, pendingTxCount, settledTxCount, pendingCryptoDepositsCount] = await Promise.all([
     prisma.user.findMany({
       include: {
         accounts: {
@@ -304,6 +305,9 @@ export async function takeAdminSnapshot(): Promise<AdminSnapshot> {
     }),
     prisma.transaction.count({
       where: { status: 'SETTLED' },
+    }),
+    prisma.cryptoDeposit.count({
+      where: { status: 'PENDING' },
     }),
   ]);
 
@@ -348,6 +352,7 @@ export async function takeAdminSnapshot(): Promise<AdminSnapshot> {
     pendingTransactions: pendingTxCount,
     settledTransactions: settledTxCount,
     verifiedKyc: users.filter(u => u.kycStatus === 'VERIFIED').length,
+    pendingCryptoDeposits: pendingCryptoDepositsCount,
   };
 
   // Generate verification hash

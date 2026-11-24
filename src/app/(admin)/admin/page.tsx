@@ -124,9 +124,7 @@ export default function AdminPanelPage() {
   }, [router]);
 
   const fetchAllData = async (t: string) => {
-    // Clear stale state before fetching fresh snapshot data
-    setUsers([]);
-    setTransactions([]);
+    // Keep existing data visible while fetching fresh snapshot (no wipe flash)
     await Promise.all([
       fetchUsers(t),
       fetchTransactions(t),
@@ -528,7 +526,13 @@ export default function AdminPanelPage() {
           <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400"><Clock size={20} /></div>
-              <div><p className="text-xs text-slate-400">Pending</p><p className="text-xl font-bold text-white">{pendingTx}</p></div>
+              <div>
+                <p className="text-xs text-slate-400">Pending</p>
+                <p className="text-xl font-bold text-white">{pendingTx}</p>
+                {cryptoDeposits.filter(d => d.status === 'PENDING').length > 0 && (
+                  <span className="text-[9px] text-amber-400 mt-0.5">+{cryptoDeposits.filter(d => d.status === 'PENDING').length} crypto</span>
+                )}
+              </div>
             </div>
           </div>
           <div className="bg-slate-800/80 rounded-xl border border-slate-700 p-4">
