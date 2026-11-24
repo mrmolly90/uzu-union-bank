@@ -152,7 +152,8 @@ export default function TransferPage() {
 
   const estimatedRate = convertCurrency(1, form.fromCurrency, form.toCurrency);
   const estimatedAmount = form.amount ? (parseFloat(form.amount) * estimatedRate).toFixed(2) : '0.00';
-  const fee = form.amount ? Math.max(3, parseFloat(form.amount) * 0.001).toFixed(2) : '0.00';
+  // 0.2% transfer fee (min $3) — professional international wire pricing
+  const fee = form.amount ? Math.max(3, parseFloat(form.amount) * 0.002).toFixed(2) : '0.00';
   const sourceAccounts = selectedAccountType === 'checking' ? checkingAccounts : savingsAccounts;
   const sourceAccount = sourceAccounts.find(a => a.currency === form.fromCurrency) || sourceAccounts[0];
   const totalDebit = (Number(form.amount) || 0) + Number(fee);
@@ -400,7 +401,7 @@ export default function TransferPage() {
                 <div className="p-4 rounded-xl bg-bybit-elevated/50 border border-bybit-border space-y-2">
                   <div className="flex justify-between text-sm"><span className="text-gray-500">Exchange Rate</span><span className="text-white font-mono">1 {form.fromCurrency} = {estimatedRate} {form.toCurrency}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-500">You Receive</span><span className="text-emerald-400 font-bold">{CURRENCY_SYMBOLS[form.toCurrency]}{parseFloat(estimatedAmount).toLocaleString()}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-500">Transfer Fee (0.1%)</span><span className="text-white">{getCurrencySymbol(form.fromCurrency)}{parseFloat(fee).toFixed(2)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">Transfer Fee (0.2%)</span><span className="text-white">{getCurrencySymbol(form.fromCurrency)}{parseFloat(fee).toFixed(2)}</span></div>
                   <div className="flex justify-between text-sm pt-2 border-t border-bybit-border"><span className="text-gray-500">Total Debit</span><span className="text-white font-bold">{getCurrencySymbol(form.fromCurrency)}{(parseFloat(form.amount) + parseFloat(fee)).toLocaleString()}</span></div>
                 </div>
               )}

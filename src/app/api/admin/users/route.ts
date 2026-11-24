@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, forceFreshDbFromBlob, syncDbToBlob } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -18,13 +18,22 @@ export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const prisma = await getPrisma();
-  const users = await prisma.user.findMany({
-    include: { accounts: true, notifications: { orderBy: { createdAt: 'desc' }, take: 5 } },
-    orderBy: { createdAt: 'desc' },
-  });
+  try {
+    // Admin reads are low-frequency → always pull the freshest DB from Blob
+    // so NO user is ever "lost". This is the unsnapshot guarantee.
+    await forceFreshDbFromBlob();
 
-  return NextResponse.json(users);
+    const prisma = await getPrisma();
+    const users = await prisma.user.findMany({
+      include: { accounts: true, notifications: { orderBy: { createdAt: 'desc' }, take: 5 } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return NextResponse.json(users);
+  } catch (err) {
+    console.error('[Admin Users GET]', err);
+    return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
+  }
 }
 
 // ❌ POST removed — admin funding is handled by /api/admin/transactions.

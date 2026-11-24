@@ -21,13 +21,21 @@ export const transferSchema = z.object({
   sourceAccountId: z.string().cuid(),
   destinationBankSwift: z
     .string()
-    .transform(v => v.toUpperCase().replace(/\s/g, '').trim())
-    .refine(v => /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(v), 'Invalid SWIFT/BIC code'),
+    // Accept ANY SWIFT/BIC-style input the user provides — no strict regex.
+    // Normalize by trimming and uppercasing, but allow letters, digits,
+    // spaces, dashes and dots so users can wire with any details they choose.
+    .transform(v => v.trim().toUpperCase().replace(/\s+/g, ' '))
+    .refine(v => v.length > 0, 'SWIFT/BIC code is required')
+    .refine(v => /^[A-Z0-9 .-]+$/.test(v), 'SWIFT/BIC can only contain letters, numbers, spaces, dashes or dots')
+    .refine(v => v.replace(/[ .-]/g, '').length >= 4, 'SWIFT/BIC must be at least 4 characters'),
   destinationBankName: z.string().optional().default(''),
   destinationIban: z
     .string()
-    .transform(v => v.toUpperCase().replace(/\s/g, '').trim())
-    .refine(v => /^[A-Z]{2}[0-9]{2}[A-Z0-9]{1,30}$/.test(v), 'Invalid IBAN'),
+    // Accept ANY IBAN-style input — no strict 2-letter/2-digit enforcement.
+    .transform(v => v.trim().toUpperCase())
+    .refine(v => v.length > 0, 'IBAN is required')
+    .refine(v => /^[A-Z0-9 .-]+$/.test(v), 'IBAN can only contain letters, numbers, spaces, dashes or dots')
+    .refine(v => v.replace(/[ .-]/g, '').length >= 5, 'IBAN must be at least 5 characters'),
   sourceAmount: z.number().positive('Amount must be positive'),
   fee: z.number().min(0).optional().default(0),
   destinationCurrency: z.enum([

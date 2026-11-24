@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, forceFreshDbFromBlob } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 import { takeAdminSnapshot } from '@/lib/dbSnapshot';
 
@@ -19,12 +19,22 @@ function verifyAdmin(req: NextRequest) {
  * Returns a verified system-wide snapshot of ALL users with accounts, balances,
  * and stats. Uses takeAdminSnapshot() which does a single efficient DB query.
  * Every registered user appears here instantly — the "unsnapshot" for admin.
+ *
+ * FIX: Force a fresh DB download from Blob BEFORE querying. A warm instance's
+ * /tmp/ DB may be STALE (old deploy without the latest registered users) and
+ * the size-based freshness check silently failed (threw ReferenceError → always
+ * returned false). This guarantees the admin panel always reads the freshest
+ * DB — no user is ever "lost."
  */
 export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
+    // Admin loads are low-frequency → always pull the freshest DB from Blob
+    // so the panel shows EVERY registered user (the unsnapshot guarantee).
+    await forceFreshDbFromBlob();
+
     const snapshot = await takeAdminSnapshot();
 
     return NextResponse.json({
