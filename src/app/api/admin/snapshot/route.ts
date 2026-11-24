@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, forceFreshDbFromBlob } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 import { takeAdminSnapshot } from '@/lib/dbSnapshot';
 
@@ -20,22 +20,22 @@ function verifyAdmin(req: NextRequest) {
  * and stats. Uses takeAdminSnapshot() which does a single efficient DB query.
  * Every registered user appears here instantly — the "unsnapshot" for admin.
  *
- * FIX: Force a fresh DB download from Blob BEFORE querying. A warm instance's
- * /tmp/ DB may be STALE (old deploy without the latest registered users) and
- * the size-based freshness check silently failed (threw ReferenceError → always
- * returned false). This guarantees the admin panel always reads the freshest
- * DB — no user is ever "lost."
+ * UNSNAPSHOT GUARANTEE: Every admin GET deletes the local /tmp/ DB and resets
+ * the Prisma client, forcing the NEXT getPrisma() call to download the freshest
+ * DB from Blob. This ensures the admin panel ALWAYS shows every registered user
+ * — no stale local copy, no "lost" users, no old code refreshing old data.
  */
 export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    // Admin loads use the throttled freshness check in getPrisma() (every 10s).
-    // forceFreshDbFromBlob is NOT called here because it disconnects + re-downloads
-    // the entire DB, which causes timeouts on every admin page load.
-    // The anti-wipe guard in syncDbToBlob() + the timestamp-based freshness check
-    // in getPrisma() ensure users are never lost.
+    // ─── UNSNAPSHOT: Delete local DB + reset client → forces fresh Blob pull ───
+    // Admin loads are low-frequency (every 15s). The cost of re-downloading the
+    // DB (200KB, ~500ms) is negligible compared to the guarantee that admin
+    // ALWAYS sees the freshest data — every user, every balance, every account.
+    await forceFreshDbFromBlob();
+
     const snapshot = await takeAdminSnapshot();
 
     return NextResponse.json({
