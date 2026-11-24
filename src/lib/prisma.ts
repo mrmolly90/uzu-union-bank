@@ -254,27 +254,46 @@ export async function forceFreshDbFromBlob(): Promise<void> {
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
   try {
-    // Count users in local DB using a lightweight Prisma query
+    // Count users in local DB using a lightweight Prisma query.
+    // If the Prisma client doesn't exist yet (first request after cold start),
+    // we CANNOT count local users — but we also MUST NOT assume Blob is better.
+    // Instead, check if the local DB file exists and has valid size.
     let localUsers = -1;
+    let localDbHasData = false;
     try {
       if (globalForPrisma.prisma) {
         const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
         localUsers = Number(result?.[0]?.n ?? -1);
+        localDbHasData = localUsers > 0;
+      } else {
+        // No Prisma client yet — check the file directly
+        localDbHasData = fs.existsSync(TMP_DB_PATH) && fs.statSync(TMP_DB_PATH).size > 4096;
       }
-    } catch { /* local DB may not exist */ }
+    } catch {
+      // Local DB may not exist or may be empty
+      localDbHasData = fs.existsSync(TMP_DB_PATH) && fs.statSync(TMP_DB_PATH).size > 4096;
+    }
 
     // Count users in Blob by checking metadata (size-based heuristic)
     const blobMeta = await getBlobMeta();
     const blobUsers = blobMeta.size > 0 ? Math.floor(blobMeta.size / 10000) : -1;
 
     // ─── DECISION: Which DB is richer? ───
-    // If local has MORE or EQUAL users → sync local→Blob, then KEEP local DB.
+    // If local has data (users > 0 OR valid file) → sync local→Blob, KEEP local DB.
     // The local DB is already the freshest — downloading from Blob would be
     // wasteful and RISKY (could get a stale Blob and wipe real users).
-    if (localUsers > 0 && (blobUsers < 0 || localUsers >= blobUsers)) {
-      console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} >= blob≈${blobUsers} — syncing local→Blob, keeping local DB`);
+    if (localDbHasData && (blobUsers < 0 || localUsers >= blobUsers)) {
+      console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} users >= blob≈${blobUsers} — syncing local→Blob, keeping local DB`);
       try { await syncDbToBlob(); } catch (e) { console.warn('[Prisma] sync warning:', e); }
       // Local DB is authoritative — no download needed
+      return;
+    }
+
+    // If we couldn't count local users but the DB file exists, keep it.
+    // Only download from Blob when we're SURE Blob has more data.
+    if (localDbHasData && localUsers < 0) {
+      console.log(`[Prisma] forceFreshDbFromBlob: local DB exists but users unknown — keeping local DB`);
+      try { await syncDbToBlob(); } catch (e) { console.warn('[Prisma] sync warning:', e); }
       return;
     }
 
