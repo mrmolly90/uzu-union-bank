@@ -299,7 +299,7 @@ export default function DashboardPage() {
   const formatIbanDisplay = (num: string) => ibanFull(num);
   const formatIbanShort = (num: string) => ibanShort(num);
 
-  // Crypto logo SVGs as inline components
+  // Crypto logo SVGs as inline components — all coins from CoinGecko market
   const CryptoLogo = ({ symbol, size = 32 }: { symbol: string; size?: number }) => {
     const logos: Record<string, JSX.Element> = {
       BTC: (
@@ -343,8 +343,99 @@ export default function DashboardPage() {
           <path d="M10.5 20.5c.2-.2.5-.4.8-.4h11.4c.5 0 .7.6.4.9l-2.6 2.6c-.2.2-.5.4-.8.4H8.3c-.5 0-.7-.6-.4-.9l2.6-2.6zm0-12.6c.2-.2.5-.4.8-.4h11.4c.5 0 .7.6.4.9l-2.6 2.6c-.2.2-.5.4-.8.4H8.3c-.5 0-.7-.6-.4-.9l2.6-2.6zm-2.2 6.3c.2-.2.5-.4.8-.4h11.4c.5 0 .7.6.4.9l-2.6 2.6c-.2.2-.5.4-.8.4H6.1c-.5 0-.7-.6-.4-.9l2.6-2.6z" fill="white"/>
         </svg>
       ),
+      BNB: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#F0B90B"/>
+          <path d="M16 4l4 4-4 4-4-4 4-4zm8 8l4 4-4 4-4-4 4-4zm-16 0l4 4-4 4-4-4 4-4zm8 8l4 4-4 4-4-4 4-4zm-4-4l4-4 4 4-4 4-4-4z" fill="white"/>
+        </svg>
+      ),
+      XRP: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#23292F"/>
+          <path d="M8 10h4l6 8 6-8h4l-8 10.5L8 10z" fill="white"/>
+        </svg>
+      ),
+      ADA: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#0033AD"/>
+          <path d="M16 4l2 4-2 4-2-4 2-4zm0 16l2 4-2 4-2-4 2-4zm-8-8l2 4-2 4-2-4 2-4zm16 0l2 4-2 4-2-4 2-4zm-8 0l2 4-2 4-2-4 2-4z" fill="white" opacity="0.8"/>
+        </svg>
+      ),
+      DOGE: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#C2A633"/>
+          <path d="M12 8h5c3 0 6 2 6 6s-3 6-6 6h-5V8zm2 2v8h3c2 0 4-2 4-4s-2-4-4-4h-3z" fill="white"/>
+        </svg>
+      ),
+      DOT: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#E6007A"/>
+          <circle cx="16" cy="8" r="3" fill="white"/>
+          <circle cx="24" cy="20" r="3" fill="white"/>
+          <circle cx="8" cy="20" r="3" fill="white"/>
+          <path d="M16 11l6 7-3 2-3-5-3 5-3-2 6-7z" fill="white" opacity="0.6"/>
+        </svg>
+      ),
+      AVAX: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#E84142"/>
+          <path d="M16 4l10 20H6L16 4z" fill="white"/>
+        </svg>
+      ),
+      LINK: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#2A5ADA"/>
+          <path d="M16 4l8 5v10l-8 5-8-5V9l8-5zm0 3l-5 3v6l5 3 5-3V10l-5-3z" fill="white"/>
+        </svg>
+      ),
+      UNI: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#FF007A"/>
+          <path d="M16 4c-4 0-8 2-10 6-2 4-2 8 0 12 2 4 6 6 10 6s8-2 10-6c2-4 2-8 0-12-2-4-6-6-10-6zm0 4c2 0 4 1 5 3 1 2 1 4 0 6-1 2-3 3-5 3s-4-1-5-3c-1-2-1-4 0-6 1-2 3-3 5-3z" fill="white"/>
+        </svg>
+      ),
+      MATIC: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#8247E5"/>
+          <path d="M16 4l10 6v12l-10 6-10-6V10l10-6zm0 4l-6 4v8l6 4 6-4v-8l-6-4z" fill="white"/>
+        </svg>
+      ),
+      ATOM: (
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle cx="16" cy="16" r="16" fill="#2E3148"/>
+          <circle cx="16" cy="16" r="5" fill="none" stroke="white" strokeWidth="2"/>
+          <path d="M16 4l4 8-4 8-4-8 4-8z" fill="white" opacity="0.6"/>
+          <path d="M4 16l8-4 8 4-8 4-8-4z" fill="white" opacity="0.6"/>
+          <path d="M24 16l-8-4-8 4 8 4 8-4z" fill="white" opacity="0.6"/>
+        </svg>
+      ),
     };
-    return logos[symbol] || <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 text-xs font-bold">?</div>;
+    // For coins without a custom SVG, show a colored circle with the first letter
+    if (!logos[symbol]) {
+      const colors: Record<string, string> = {
+        LTC: '#345D9D', XLM: '#14B4E4', XMR: '#FF6600', EOS: '#4433DD',
+        TRX: '#EF0027', XTZ: '#2C7DF7', VET: '#158BFF', FIL: '#0090FF',
+        THETA: '#2AB8E6', AAVE: '#B6509E', MKR: '#1AAB9B', COMP: '#00D395',
+        SUSHI: '#FA52A0', CRO: '#002D74', NEAR: '#000000', HBAR: '#282828',
+        ALGO: '#000000', ICP: '#3B00B9', FET: '#000000', RNDR: '#000000',
+        IMX: '#000000', GALA: '#000000', MANA: '#FF2D55', SAND: '#00ACEE',
+        AXS: '#000000', FLOW: '#00EF8B', ENJ: '#7866D5', BAT: '#FF5000',
+        ZEC: '#F4B728', DASH: '#008CE4', NEO: '#58BF00', MIOTA: '#242424',
+        WAVES: '#0055FF', ONT: '#32A7BE', QTUM: '#2E9AD0', ZIL: '#49C1BF',
+        SC: '#00FF00', ZRX: '#302C2C', LRC: '#000000', YFI: '#006AE3',
+        CRV: '#000000', BAL: '#000000', '1INCH': '#000000', CAKE: '#D1884F',
+        GRT: '#6747ED', AR: '#222222', CVX: '#000000', FTM: '#1969FF',
+        ONE: '#00AEE9', EGLD: '#000000', CELO: '#35D07F', KSM: '#000000',
+        BCH: '#8DC351', ETC: '#33FF99',
+      };
+      const bg = colors[symbol] || '#6366f1';
+      return (
+        <div className="flex items-center justify-center rounded-full" style={{ width: size, height: size, backgroundColor: bg }}>
+          <span className="text-white font-bold" style={{ fontSize: size * 0.4 }}>{symbol.charAt(0)}</span>
+        </div>
+      );
+    }
+    return logos[symbol];
   };
 
   const copyToClipboard = async (text: string, id: string) => {

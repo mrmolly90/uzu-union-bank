@@ -589,15 +589,19 @@ export async function getPrisma(): Promise<PrismaClient> {
     const localDbValid = localDbExists && fs.statSync(TMP_DB_PATH).size > 4096;
 
     if (!localDbValid) {
-      // No valid local DB — try Blob, fall back to seed
+      // No valid local DB — try Blob
       try {
         await downloadFromBlob();
         console.log('[Prisma] Cold start: restored from Blob');
       } catch {
-        console.log('[Prisma] Cold start: Blob unavailable, using seed DB');
-        copyBuildDbToTmp();
-        // Sync seed DB to Blob so next cold start has data
-        try { await syncDbToBlob(); } catch {}
+        console.log('[Prisma] Cold start: Blob unavailable — creating empty DB');
+        // CRITICAL: NEVER copy the build-time seed DB over runtime data!
+        // The seed DB has only 2 demo users and would wipe all 21 real users.
+        // Instead, create an empty DB — Prisma will create tables on first query.
+        ensureTmpDir();
+        if (!fs.existsSync(TMP_DB_PATH)) {
+          fs.writeFileSync(TMP_DB_PATH, '');
+        }
       }
     }
     // Local DB is valid — keep it. Blob is a cold-start backup.

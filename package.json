@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "npm run db:generate:dev && next dev",
     "build": "npx prisma generate --schema=prisma/schema.vercel.prisma && next build",
-    "vercel-build": "npx prisma generate --schema=prisma/schema.vercel.prisma && DATABASE_URL=\"file:./prisma/uzu_bank.db\" npx prisma db push --schema=prisma/schema.vercel.prisma --accept-data-loss && DATABASE_URL=\"file:./prisma/uzu_bank.db\" npx tsx prisma/seed.ts && npx tsx prisma/setup-turso.ts && npx next build",
+    "vercel-build": "npx prisma generate --schema=prisma/schema.vercel.prisma && npx next build",
     "start": "next start",
     "db:generate": "prisma generate --schema=prisma/schema.vercel.prisma",
     "db:generate:dev": "prisma generate --schema=prisma/schema.prisma",
