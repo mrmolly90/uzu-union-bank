@@ -285,6 +285,10 @@ export async function forceFreshDbFromBlob(): Promise<void> {
     if (localDbHasData && (blobUsers < 0 || localUsers >= blobUsers)) {
       console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} users >= blob≈${blobUsers} — syncing local→Blob, keeping local DB`);
       try { await syncDbToBlob(); } catch (e) { console.warn('[Prisma] sync warning:', e); }
+      // CRITICAL: Update sync marker even if sync FAILED. This prevents the
+      // warm-instance getPrisma() path from seeing isBlobNewerThanLocal()=true
+      // and downloading a stale Blob that would wipe real users.
+      writeSyncMarker(Date.now());
       // Local DB is authoritative — no download needed
       return;
     }
@@ -294,6 +298,7 @@ export async function forceFreshDbFromBlob(): Promise<void> {
     if (localDbHasData && localUsers < 0) {
       console.log(`[Prisma] forceFreshDbFromBlob: local DB exists but users unknown — keeping local DB`);
       try { await syncDbToBlob(); } catch (e) { console.warn('[Prisma] sync warning:', e); }
+      writeSyncMarker(Date.now());
       return;
     }
 
@@ -500,6 +505,11 @@ let lastBlobCheck = 0;
  * Get the Prisma client singleton with cross-instance consistency.
  * Warm instances reuse the existing client and only check Blob freshness
  * every 10s (throttled) to avoid head() latency on every request.
+ *
+ * CRITICAL: The warm-instance Blob check compares USER COUNTS, not just
+ * timestamps. If the local DB has MORE users than the Blob, we NEVER
+ * download from Blob — the local DB is authoritative. This prevents the
+ * "new users disappear" bug where a stale Blob overwrites real data.
  */
 export async function getPrisma(): Promise<PrismaClient> {
   // Warm instance with existing client
@@ -512,24 +522,43 @@ export async function getPrisma(): Promise<PrismaClient> {
         try {
           const blobNewer = await isBlobNewerThanLocal();
           if (blobNewer) {
-            console.log('[Prisma] Blob is newer than local DB, re-downloading...');
-            // SAFE SWAP: Download to temp buffer first, only swap if successful
+            // ─── USER-COUNT CHECK: Only download if Blob has MORE users ───
+            // Count local users first
+            let localUserCount = -1;
             try {
-              const blobBuffer = await downloadBlobToBuffer();
-              if (blobBuffer && blobBuffer.length > 4096) {
-                await globalForPrisma.prisma.$disconnect().catch(() => {});
-                globalForPrisma.prisma = undefined as unknown as PrismaClient;
-                fs.writeFileSync(TMP_DB_PATH, blobBuffer);
-                writeSyncMarker(Date.now());
-                console.log('[Prisma] Warm instance: safely swapped in fresh Blob DB');
-              } else {
-                console.log('[Prisma] Warm instance: Blob empty — keeping current DB');
+              const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
+              localUserCount = Number(result?.[0]?.n ?? -1);
+            } catch { /* query failed — proceed with caution */ }
+
+            // Estimate Blob user count from size
+            const blobMeta = await getBlobMeta();
+            const blobUserEstimate = blobMeta.size > 0 ? Math.floor(blobMeta.size / 10000) : -1;
+
+            // CRITICAL: If local has MORE or EQUAL users, NEVER download from Blob.
+            // The local DB is the source of truth. Downloading a stale Blob would
+            // wipe real users and their balances.
+            if (localUserCount > 0 && (blobUserEstimate < 0 || localUserCount >= blobUserEstimate)) {
+              console.log(`[Prisma] Warm instance: local=${localUserCount} >= blob≈${blobUserEstimate} — keeping local DB`);
+              // Update sync marker to prevent repeated checks
+              writeSyncMarker(Date.now());
+            } else {
+              console.log(`[Prisma] Blob is newer than local DB, re-downloading...`);
+              // SAFE SWAP: Download to temp buffer first, only swap if successful
+              try {
+                const blobBuffer = await downloadBlobToBuffer();
+                if (blobBuffer && blobBuffer.length > 4096) {
+                  await globalForPrisma.prisma.$disconnect().catch(() => {});
+                  globalForPrisma.prisma = undefined as unknown as PrismaClient;
+                  fs.writeFileSync(TMP_DB_PATH, blobBuffer);
+                  writeSyncMarker(Date.now());
+                  console.log('[Prisma] Warm instance: safely swapped in fresh Blob DB');
+                } else {
+                  console.log('[Prisma] Warm instance: Blob empty — keeping current DB');
+                }
+              } catch {
+                // CRITICAL: NEVER copy the build-time seed DB over runtime data!
+                console.log('[Prisma] Warm instance: Blob download failed — keeping current DB');
               }
-            } catch {
-              // CRITICAL: NEVER copy the build-time seed DB over runtime data!
-              // The seed DB has only 2 demo users and would wipe all 22 real users.
-              // Keep the current DB intact — slightly stale is far better than wiped.
-              console.log('[Prisma] Warm instance: Blob download failed — keeping current DB');
             }
           }
         } catch {
