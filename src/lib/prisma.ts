@@ -267,16 +267,20 @@ export async function forceFreshDbFromBlob(): Promise<void> {
     const blobMeta = await getBlobMeta();
     const blobUsers = blobMeta.size > 0 ? Math.floor(blobMeta.size / 10000) : -1;
 
-    // Only sync local→Blob if local has MORE users (local is richer)
-    if (localUsers > 0 && (blobUsers < 0 || localUsers > blobUsers)) {
-      console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} users > blob≈${blobUsers} — syncing local→Blob first`);
+    // ─── DECISION: Which DB is richer? ───
+    // If local has MORE or EQUAL users → sync local→Blob, then KEEP local DB.
+    // The local DB is already the freshest — downloading from Blob would be
+    // wasteful and RISKY (could get a stale Blob and wipe real users).
+    if (localUsers > 0 && (blobUsers < 0 || localUsers >= blobUsers)) {
+      console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} >= blob≈${blobUsers} — syncing local→Blob, keeping local DB`);
       try { await syncDbToBlob(); } catch (e) { console.warn('[Prisma] sync warning:', e); }
-    } else {
-      console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} users, blob≈${blobUsers} — skipping sync, Blob is authoritative`);
+      // Local DB is authoritative — no download needed
+      return;
     }
 
-    // ─── SAFE SWAP: Download to temp file first, then swap ───
-    // Step 1: Download fresh Blob data to a temporary file
+    // Blob has MORE users — download and swap (safe swap pattern)
+    console.log(`[Prisma] forceFreshDbFromBlob: blob≈${blobUsers} > local=${localUsers} — downloading fresh Blob`);
+
     let downloadSucceeded = false;
     try {
       const blobBuffer = await downloadBlobToBuffer();
@@ -290,34 +294,19 @@ export async function forceFreshDbFromBlob(): Promise<void> {
     }
 
     if (!downloadSucceeded) {
-      // Blob unavailable — keep the existing local DB untouched.
-      // The admin will see the current (slightly stale) data, which is
-      // far better than showing 0 users.
       console.log('[Prisma] forceFreshDbFromBlob: Blob download failed — keeping current DB');
       return;
     }
 
-    // Step 2: Download succeeded — now safely swap
+    // Safe swap: reset client, replace DB file, update sync marker
     await resetPrisma();
-
-    // Remove old sync marker
-    if (fs.existsSync(BLOB_SYNC_MARKER)) {
-      fs.unlinkSync(BLOB_SYNC_MARKER);
-    }
-
-    // Atomically replace the DB file with the downloaded temp file
-    if (fs.existsSync(TMP_DB_PATH)) {
-      fs.unlinkSync(TMP_DB_PATH);
-    }
+    if (fs.existsSync(BLOB_SYNC_MARKER)) fs.unlinkSync(BLOB_SYNC_MARKER);
+    if (fs.existsSync(TMP_DB_PATH)) fs.unlinkSync(TMP_DB_PATH);
     fs.renameSync(TMP_DOWNLOAD_PATH, TMP_DB_PATH);
-
-    // Update sync marker so warm instances don't re-download
     writeSyncMarker(Date.now());
-
     console.log('[Prisma] forceFreshDbFromBlob: safely swapped in fresh Blob DB');
   } catch (err) {
     console.error('[Prisma] forceFreshDbFromBlob non-fatal:', err instanceof Error ? err.message : String(err));
-    // Clean up temp file if it exists
     try { if (fs.existsSync(TMP_DOWNLOAD_PATH)) fs.unlinkSync(TMP_DOWNLOAD_PATH); } catch {}
   }
 }
