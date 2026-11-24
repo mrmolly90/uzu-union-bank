@@ -201,11 +201,14 @@ export default function AdminPanelPage() {
         setUsers(data.users);
       }
       setLoading(false);
-    } catch {
-      // On error, clear users to prevent stale data display
-      setUsers([]);
-      localStorage.removeItem('uzu-admin-token');
-      router.push('/admin/login');
+    } catch (err) {
+      // On transient error (e.g. Blob unavailable), keep existing data visible.
+      // Only redirect if we have NO data at all (fresh load failure).
+      console.error('[Admin] fetchUsers error:', err);
+      if (users.length === 0) {
+        localStorage.removeItem('uzu-admin-token');
+        router.push('/admin/login');
+      }
     }
   };
 

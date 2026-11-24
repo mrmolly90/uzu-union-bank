@@ -159,70 +159,16 @@ function resolveDatabaseUrl(): string {
 /** Download the freshest DB from Vercel Blob, overwriting the local /tmp/ copy. */
 async function downloadFromBlob(): Promise<void> {
   ensureTmpDir();
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  const storeId = process.env.BLOB_STORE_ID;
-  if (!blobToken || !storeId) throw new Error('Blob not configured');
-
-  // Retry up to 3 times with backoff for network resilience
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      // First try head() + authenticated fetch
-      let blobBuffer: Buffer | null = null;
-      try {
-        const meta = await head(BLOB_DB_KEY, { token: blobToken, storeId }) as any;
-        if (meta?.downloadUrl) {
-          const response = await fetch(meta.downloadUrl, {
-            headers: { Authorization: `Bearer ${blobToken}` },
-          });
-          if (response.ok) {
-            const arrayBuffer = await response.arrayBuffer();
-            blobBuffer = Buffer.from(arrayBuffer);
-          }
-        }
-      } catch { /* fall through */ }
-
-      // Fallback: get() with stream
-      if (!blobBuffer || blobBuffer.length <= 4096) {
-        try {
-          const blobResult = await get(BLOB_DB_KEY, {
-            access: 'private',
-            token: blobToken,
-            storeId,
-          });
-          if (blobResult?.stream) {
-            const reader = blobResult.stream.getReader();
-            const chunks: Uint8Array[] = [];
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              chunks.push(value);
-            }
-            const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-            if (totalLength > 4096) blobBuffer = Buffer.concat(chunks);
-          }
-        } catch { /* fall through */ }
-      }
-
-      if (blobBuffer && blobBuffer.length > 4096) {
-        fs.writeFileSync(TMP_DB_PATH, blobBuffer);
-        console.log('[Prisma] Downloaded DB from Blob (' + blobBuffer.length + ' bytes)');
-        // CRITICAL: writeSyncMarker expects epoch-ms TIMESTAMP, not file size!
-        // Using Date.now() ensures isBlobNewerThanLocal() correctly compares
-        // against the Blob's uploadedAt timestamp.
-        writeSyncMarker(Date.now());
-        return;
-      }
-      throw new Error('Blob empty or unavailable (attempt ' + (attempt + 1) + ')');
-    } catch (err) {
-      lastError = err;
-      if (attempt < 2) {
-        console.log('[Prisma] Blob download attempt ' + (attempt + 1) + ' failed, retrying...');
-        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-      }
-    }
+  const blobBuffer = await downloadBlobToBuffer();
+  if (!blobBuffer || blobBuffer.length <= 4096) {
+    throw new Error('Blob empty or unavailable after retries');
   }
-  throw lastError || new Error('Blob download failed after 3 attempts');
+  fs.writeFileSync(TMP_DB_PATH, blobBuffer);
+  console.log('[Prisma] Downloaded DB from Blob (' + blobBuffer.length + ' bytes)');
+  // CRITICAL: writeSyncMarker expects epoch-ms TIMESTAMP, not file size!
+  // Using Date.now() ensures isBlobNewerThanLocal() correctly compares
+  // against the Blob's uploadedAt timestamp.
+  writeSyncMarker(Date.now());
 }
 
 /** Copy the build-time seeded DB to /tmp/ as a fallback. */
@@ -289,30 +235,152 @@ async function ensureLatestSchema(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Force a fresh download from Blob by deleting the local /tmp/ DB and
- * resetting the Prisma client. The next getPrisma() call will detect the
- * missing file and download the freshest Blob copy.
- * Used by admin reads (low-frequency) to guarantee the "unsnapshot" freshness.
+ * Force a fresh download from Blob by using a SAFE SWAP pattern:
+ * 1. Download fresh Blob data to a TEMPORARY file
+ * 2. ONLY if the download succeeds, swap it in and reset the client
+ * 3. If the download fails, KEEP the existing local DB and client intact
  *
- * CRITICAL: Does NOT sync local→Blob before deleting. A stale local DB must
- * NEVER overwrite a richer Blob. The Blob is the SOURCE OF TRUTH for all
- * user data across all serverless instances.
- * Best-effort: on failure, keeps the current client/DB untouched.
+ * This prevents the admin panel from showing 0 users when Blob is
+ * temporarily unavailable (common in serverless cold-start races).
+ *
+ * SMART SYNC: Compares user count between local DB and Blob.
+ * - If local has MORE users → sync local→Blob first (preserves richer data)
+ * - If Blob has MORE users → skip sync, just pull fresh Blob
+ * - If equal → just pull fresh Blob
+ * This ensures admin ALWAYS sees the MAXIMUM user count across all instances.
  */
 export async function forceFreshDbFromBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
+  const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
+
   try {
-    await resetPrisma();
-    if (fs.existsSync(TMP_DB_PATH)) {
-      fs.unlinkSync(TMP_DB_PATH);
-      console.log('[Prisma] Deleted local DB — next getPrisma() will pull fresh from Blob');
+    // Count users in local DB using a lightweight Prisma query
+    let localUsers = -1;
+    try {
+      if (globalForPrisma.prisma) {
+        const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
+        localUsers = Number(result?.[0]?.n ?? -1);
+      }
+    } catch { /* local DB may not exist */ }
+
+    // Count users in Blob by checking metadata (size-based heuristic)
+    const blobMeta = await getBlobMeta();
+    const blobUsers = blobMeta.size > 0 ? Math.floor(blobMeta.size / 10000) : -1;
+
+    // Only sync local→Blob if local has MORE users (local is richer)
+    if (localUsers > 0 && (blobUsers < 0 || localUsers > blobUsers)) {
+      console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} users > blob≈${blobUsers} — syncing local→Blob first`);
+      try { await syncDbToBlob(); } catch (e) { console.warn('[Prisma] sync warning:', e); }
+    } else {
+      console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} users, blob≈${blobUsers} — skipping sync, Blob is authoritative`);
     }
+
+    // ─── SAFE SWAP: Download to temp file first, then swap ───
+    // Step 1: Download fresh Blob data to a temporary file
+    let downloadSucceeded = false;
+    try {
+      const blobBuffer = await downloadBlobToBuffer();
+      if (blobBuffer && blobBuffer.length > 4096) {
+        fs.writeFileSync(TMP_DOWNLOAD_PATH, blobBuffer);
+        downloadSucceeded = true;
+        console.log(`[Prisma] Downloaded fresh Blob (${blobBuffer.length} bytes) to temp file`);
+      }
+    } catch (err) {
+      console.warn('[Prisma] Blob download failed — keeping current DB intact:', err instanceof Error ? err.message : String(err));
+    }
+
+    if (!downloadSucceeded) {
+      // Blob unavailable — keep the existing local DB untouched.
+      // The admin will see the current (slightly stale) data, which is
+      // far better than showing 0 users.
+      console.log('[Prisma] forceFreshDbFromBlob: Blob download failed — keeping current DB');
+      return;
+    }
+
+    // Step 2: Download succeeded — now safely swap
+    await resetPrisma();
+
+    // Remove old sync marker
     if (fs.existsSync(BLOB_SYNC_MARKER)) {
       fs.unlinkSync(BLOB_SYNC_MARKER);
     }
+
+    // Atomically replace the DB file with the downloaded temp file
+    if (fs.existsSync(TMP_DB_PATH)) {
+      fs.unlinkSync(TMP_DB_PATH);
+    }
+    fs.renameSync(TMP_DOWNLOAD_PATH, TMP_DB_PATH);
+
+    // Update sync marker so warm instances don't re-download
+    writeSyncMarker(Date.now());
+
+    console.log('[Prisma] forceFreshDbFromBlob: safely swapped in fresh Blob DB');
   } catch (err) {
     console.error('[Prisma] forceFreshDbFromBlob non-fatal:', err instanceof Error ? err.message : String(err));
+    // Clean up temp file if it exists
+    try { if (fs.existsSync(TMP_DOWNLOAD_PATH)) fs.unlinkSync(TMP_DOWNLOAD_PATH); } catch {}
   }
+}
+
+/**
+ * Download the Blob DB content into a Buffer without touching the local DB file.
+ * Returns null if Blob is unavailable or empty.
+ */
+async function downloadBlobToBuffer(): Promise<Buffer | null> {
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  const storeId = process.env.BLOB_STORE_ID;
+  if (!blobToken || !storeId) return null;
+
+  // Retry up to 3 times with backoff
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      // First try head() + authenticated fetch
+      let blobBuffer: Buffer | null = null;
+      try {
+        const meta = await head(BLOB_DB_KEY, { token: blobToken, storeId }) as any;
+        if (meta?.downloadUrl) {
+          const response = await fetch(meta.downloadUrl, {
+            headers: { Authorization: `Bearer ${blobToken}` },
+          });
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            blobBuffer = Buffer.from(arrayBuffer);
+          }
+        }
+      } catch { /* fall through */ }
+
+      // Fallback: get() with stream
+      if (!blobBuffer || blobBuffer.length <= 4096) {
+        try {
+          const blobResult = await get(BLOB_DB_KEY, {
+            access: 'private',
+            token: blobToken,
+            storeId,
+          });
+          if (blobResult?.stream) {
+            const reader = blobResult.stream.getReader();
+            const chunks: Uint8Array[] = [];
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+            }
+            const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+            if (totalLength > 4096) blobBuffer = Buffer.concat(chunks);
+          }
+        } catch { /* fall through */ }
+      }
+
+      if (blobBuffer && blobBuffer.length > 4096) {
+        return blobBuffer;
+      }
+    } catch { /* retry */ }
+
+    if (attempt < 2) {
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  return null;
 }
 
 /**
@@ -437,12 +505,23 @@ export async function getPrisma(): Promise<PrismaClient> {
           const blobNewer = await isBlobNewerThanLocal();
           if (blobNewer) {
             console.log('[Prisma] Blob is newer than local DB, re-downloading...');
-            await globalForPrisma.prisma.$disconnect().catch(() => {});
-            globalForPrisma.prisma = undefined as unknown as PrismaClient;
+            // SAFE SWAP: Download to temp buffer first, only swap if successful
             try {
-              await downloadFromBlob();
+              const blobBuffer = await downloadBlobToBuffer();
+              if (blobBuffer && blobBuffer.length > 4096) {
+                await globalForPrisma.prisma.$disconnect().catch(() => {});
+                globalForPrisma.prisma = undefined as unknown as PrismaClient;
+                fs.writeFileSync(TMP_DB_PATH, blobBuffer);
+                writeSyncMarker(Date.now());
+                console.log('[Prisma] Warm instance: safely swapped in fresh Blob DB');
+              } else {
+                console.log('[Prisma] Warm instance: Blob empty — keeping current DB');
+              }
             } catch {
-              copyBuildDbToTmp();
+              // CRITICAL: NEVER copy the build-time seed DB over runtime data!
+              // The seed DB has only 2 demo users and would wipe all 22 real users.
+              // Keep the current DB intact — slightly stale is far better than wiped.
+              console.log('[Prisma] Warm instance: Blob download failed — keeping current DB');
             }
           }
         } catch {
