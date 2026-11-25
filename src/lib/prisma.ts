@@ -919,7 +919,7 @@ export async function withUnsnapshotNull<T>(
  * Used by withUnsnapshotNull() when the local DB returned null for a query —
  * the local DB is STALE by definition, so we need the absolute freshest Blob.
  */
-async function forceDownloadFromBlob(): Promise<void> {
+export async function forceDownloadFromBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
