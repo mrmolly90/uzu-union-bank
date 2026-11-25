@@ -35,6 +35,31 @@ function ensureTmpDir(): void {
 }
 
 /**
+ * Clean up SQLite WAL and SHM files that may remain from a previous instance.
+ * When we swap the DB file, stale WAL/SHM files cause "database disk image is
+ * malformed" errors because SQLite reads the WAL first and finds data that
+ * doesn't match the new DB file.
+ * 
+ * This must be called BEFORE any DB file swap or cold-start restore.
+ */
+function cleanupWalShm(): void {
+  try {
+    const walPath = TMP_DB_PATH + '-wal';
+    const shmPath = TMP_DB_PATH + '-shm';
+    if (fs.existsSync(walPath)) {
+      fs.unlinkSync(walPath);
+      console.log('[Prisma] Cleaned stale WAL file');
+    }
+    if (fs.existsSync(shmPath)) {
+      fs.unlinkSync(shmPath);
+      console.log('[Prisma] Cleaned stale SHM file');
+    }
+  } catch (err) {
+    console.warn('[Prisma] WAL/SHM cleanup error:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
  * Read the last-known-sync timestamp (epoch ms). 0 means never synced.
  * Storing a TIMESTAMP (not a size) means content changes that keep the
  * same file size still trigger a re-download on warm instances.
@@ -163,6 +188,7 @@ async function downloadFromBlob(): Promise<void> {
   if (!blobBuffer || blobBuffer.length <= 4096) {
     throw new Error('Blob empty or unavailable after retries');
   }
+  cleanupWalShm();
   fs.writeFileSync(TMP_DB_PATH, blobBuffer);
   console.log('[Prisma] Downloaded DB from Blob (' + blobBuffer.length + ' bytes)');
   // CRITICAL: writeSyncMarker expects epoch-ms TIMESTAMP, not file size!
@@ -181,6 +207,7 @@ function copyBuildDbToTmp(): void {
   ];
   for (const buildDb of possiblePaths) {
     if (fs.existsSync(buildDb)) {
+      cleanupWalShm();
       fs.copyFileSync(buildDb, TMP_DB_PATH);
       console.log('[Prisma] Copied seed DB from ' + buildDb);
       return;
@@ -326,6 +353,7 @@ export async function forceFreshDbFromBlob(): Promise<void> {
 
     // Safe swap: reset client, replace DB file, update sync marker
     await resetPrisma();
+    cleanupWalShm();
     if (fs.existsSync(BLOB_SYNC_MARKER)) fs.unlinkSync(BLOB_SYNC_MARKER);
     if (fs.existsSync(TMP_DB_PATH)) fs.unlinkSync(TMP_DB_PATH);
     fs.renameSync(TMP_DOWNLOAD_PATH, TMP_DB_PATH);
@@ -570,6 +598,7 @@ export async function getPrisma(): Promise<PrismaClient> {
                 if (blobBuffer && blobBuffer.length > 4096) {
                   await globalForPrisma.prisma.$disconnect().catch(() => {});
                   globalForPrisma.prisma = undefined as unknown as PrismaClient;
+                  cleanupWalShm();
                   fs.writeFileSync(TMP_DB_PATH, blobBuffer);
                   writeSyncMarker(Date.now());
                   console.log('[Prisma] Warm instance: safely swapped in fresh Blob DB');
@@ -607,6 +636,7 @@ export async function getPrisma(): Promise<PrismaClient> {
             // Quick validation: try to count users in the downloaded DB
             // by writing to a temp path, creating a Prisma client, and querying.
             // If the DB has valid data, use it.
+            cleanupWalShm();
             fs.writeFileSync(TMP_DB_PATH, blobBuffer);
             writeSyncMarker(Date.now());
             console.log(`[Prisma] Cold start: restored from Blob (${blobBuffer.length} bytes)`);
@@ -625,6 +655,7 @@ export async function getPrisma(): Promise<PrismaClient> {
         // The seed DB has only 2 demo users and would wipe all 22 real users.
         // Instead, create an empty DB — Prisma will create tables on first query.
         ensureTmpDir();
+        cleanupWalShm();
         if (!fs.existsSync(TMP_DB_PATH)) {
           fs.writeFileSync(TMP_DB_PATH, '');
         }
@@ -755,6 +786,7 @@ async function forceDownloadFromBlob(): Promise<void> {
 
     // Safe swap: reset client, replace DB file, update sync marker
     await resetPrisma();
+    cleanupWalShm();
     if (fs.existsSync(BLOB_SYNC_MARKER)) fs.unlinkSync(BLOB_SYNC_MARKER);
     if (fs.existsSync(TMP_DB_PATH)) fs.unlinkSync(TMP_DB_PATH);
     fs.renameSync(TMP_DOWNLOAD_PATH, TMP_DB_PATH);
