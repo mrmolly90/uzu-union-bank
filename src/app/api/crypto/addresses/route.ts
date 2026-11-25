@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, withUnsnapshot } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token.' }, { status: 401 });
     }
 
-    const addresses = await withRetry(async () => {
+    const addresses = await withUnsnapshot('Crypto Addresses', async () => {
       const prisma = await getPrisma();
       return prisma.cryptoAddress.findMany({
         where: { isActive: true },

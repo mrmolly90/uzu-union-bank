@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, forceFreshDbFromBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyAccessToken, sanitizeUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -34,24 +34,10 @@ export async function GET(req: NextRequest) {
     }
 
     const user = await withRetry(async () => {
-      const prisma = await getPrisma();
-      const found = await prisma.user.findUnique({ where: { id: decoded.sub } });
-
-      if (!found) {
-        // ─── UNSNAPSHOT: User not found — force fresh Blob download ───
-        console.log(`[Auth Me] User ${decoded.sub} not found — unsnapshot retry...`);
-        try {
-          await forceFreshDbFromBlob();
-          await resetPrisma();
-        } catch (e) {
-          console.warn('[Auth Me] Unsnapshot failed:', e instanceof Error ? e.message : String(e));
-        }
-
-        const prisma2 = await getPrisma();
-        return prisma2.user.findUnique({ where: { id: decoded.sub } });
-      }
-
-      return found;
+      return withUnsnapshotNull('Auth Me', async () => {
+        const prisma = await getPrisma();
+        return prisma.user.findUnique({ where: { id: decoded.sub } });
+      });
     });
 
     if (!user) {

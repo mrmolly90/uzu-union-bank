@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, forceFreshDbFromBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyPassword, createAuthTokens, sanitizeUser, getJwtSecret } from '@/lib/auth';
 import jwt from 'jsonwebtoken';
 
@@ -35,36 +35,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Session expired. Please sign in again.' }, { status: 401 });
     }
 
-    // Use retry to handle cold-start DB restore timing
+    // Use retry + unsnapshot to handle cold-start DB restore races.
     const result = await withRetry(async () => {
-      const prisma = await getPrisma();
-      const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
+      const user = await withUnsnapshotNull('Verify PIN', async () => {
+        const prisma = await getPrisma();
+        return prisma.user.findUnique({ where: { id: decoded.sub } });
+      });
 
       if (!user || !user.bankPinHash) {
-        // ─── UNSNAPSHOT: User not found — force fresh Blob download ───
-        // The tempToken is valid (signed by us) but this instance has stale DB.
-        console.log(`[Verify PIN] User ${decoded.sub} not found — unsnapshot retry...`);
-        try {
-          await forceFreshDbFromBlob();
-          await resetPrisma();
-        } catch (e) {
-          console.warn('[Verify PIN] Unsnapshot failed:', e instanceof Error ? e.message : String(e));
-        }
-
-        // Retry with fresh DB
-        const prisma2 = await getPrisma();
-        const user2 = await prisma2.user.findUnique({ where: { id: decoded.sub } });
-        if (!user2 || !user2.bankPinHash) {
-          return { error: 'Invalid credentials.', status: 401 as const };
-        }
-
-        const pinValid2 = await verifyPassword(bankPin, user2.bankPinHash);
-        if (!pinValid2) {
-          return { error: 'Invalid bank PIN.', status: 401 as const };
-        }
-
-        const tokens2 = await createAuthTokens(user2);
-        return { user: sanitizeUser(user2), tokens: tokens2, unsnapshotted: true };
+        return { error: 'Invalid credentials.', status: 401 as const };
       }
 
       const pinValid = await verifyPassword(bankPin, user.bankPinHash);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshot, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
@@ -20,7 +20,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
 
-    const prisma = await getPrisma();
     const body = await req.json();
     const { sourceAccountId, destinationAccountId, amount } = body;
 
@@ -28,9 +27,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid transfer details.' }, { status: 400 });
     }
 
-    // Verify source account belongs to the user
-    const sourceAccount = await prisma.account.findFirst({
-      where: { id: sourceAccountId, userId: decoded.sub },
+    // Verify source account belongs to the user — with unsnapshot
+    const sourceAccount = await withUnsnapshotNull('Domestic Transfer', async () => {
+      const prisma = await getPrisma();
+      return prisma.account.findFirst({
+        where: { id: sourceAccountId, userId: decoded.sub },
+      });
     });
 
     if (!sourceAccount) {
@@ -40,6 +42,8 @@ export async function POST(req: NextRequest) {
     if (Number(sourceAccount.balance) < amount) {
       return NextResponse.json({ error: 'Insufficient funds.' }, { status: 400 });
     }
+
+    const prisma = await getPrisma();
 
     // Find or auto-create destination account (new users may only have one account type)
     let destAccount = await prisma.account.findFirst({

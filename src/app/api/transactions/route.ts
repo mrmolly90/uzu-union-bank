@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshot, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
 
-    const transactions = await withRetry(async () => {
+    const transactions = await withUnsnapshot('Transactions GET', async () => {
       const prisma = await getPrisma();
       return prisma.transaction.findMany({
         where: { initiatedById: decoded.sub },
@@ -120,10 +120,13 @@ export async function POST(req: NextRequest) {
 
     const { sourceAccountId, destinationBankSwift, destinationBankName, destinationIban, sourceAmount, destinationCurrency, fee } = parsed.data;
 
-    // Check if user's transfers are paused by admin
-    const userRecord = await prisma.user.findUnique({
-      where: { id: decoded.sub },
-      select: { transferPaused: true },
+    // Check if user's transfers are paused by admin — with unsnapshot
+    const userRecord = await withUnsnapshotNull('Transfer POST user', async () => {
+      const p = await getPrisma();
+      return p.user.findUnique({
+        where: { id: decoded.sub },
+        select: { transferPaused: true },
+      });
     });
     if (userRecord?.transferPaused) {
       return NextResponse.json(
@@ -132,9 +135,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify source account belongs to user
-    const sourceAccount = await prisma.account.findFirst({
-      where: { id: sourceAccountId, userId: decoded.sub },
+    // Verify source account belongs to user — with unsnapshot
+    const sourceAccount = await withUnsnapshotNull('Transfer POST account', async () => {
+      const p = await getPrisma();
+      return p.account.findFirst({
+        where: { id: sourceAccountId, userId: decoded.sub },
+      });
     });
 
     if (!sourceAccount) {

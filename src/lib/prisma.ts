@@ -652,3 +652,68 @@ export async function resetPrisma(): Promise<void> {
     globalForPrisma.prisma = undefined as unknown as PrismaClient;
   }
 }
+
+/**
+ * UNSNAPSHOT WRAPPER: Wraps any DB query with automatic Blob refresh.
+ * 
+ * If the query fails or returns null (data not found), this helper:
+ * 1. Forces a fresh Blob download via forceFreshDbFromBlob()
+ * 2. Resets the Prisma client so the next getPrisma() pulls fresh data
+ * 3. Retries the query ONCE with the fresh DB
+ * 
+ * This ensures ALL endpoints are resilient to stale Blob data on cold-start
+ * serverless instances. Users and data will NEVER be "not found" due to a
+ * stale local DB — the unsnapshot automatically repairs the instance.
+ * 
+ * @param label - A short label for logging (e.g. 'Crypto Addresses')
+ * @param query - The DB query function to execute
+ * @returns The result of the query
+ */
+export async function withUnsnapshot<T>(
+  label: string,
+  query: () => Promise<T>
+): Promise<T> {
+  try {
+    return await query();
+  } catch (err) {
+    // Query failed — unsnapshot and retry once
+    console.log(`[${label}] Unsnapshot retry after error:`, err instanceof Error ? err.message : String(err));
+    try {
+      await forceFreshDbFromBlob();
+      await resetPrisma();
+    } catch (e) {
+      console.warn(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
+    }
+    return await query();
+  }
+}
+
+/**
+ * UNSNAPSHOT NULL GUARD: Like withUnsnapshot, but specifically handles
+ * the case where a DB query returns null/empty (user/account not found).
+ * 
+ * Only triggers unsnapshot when the result is null/undefined, not on errors.
+ * This is ideal for login/auth routes where "not found" is the common stale
+ * Blob symptom.
+ * 
+ * @param label - A short label for logging
+ * @param query - The DB query that may return null
+ * @returns The query result (never null after unsnapshot if data exists)
+ */
+export async function withUnsnapshotNull<T>(
+  label: string,
+  query: () => Promise<T | null>
+): Promise<T | null> {
+  const result = await query();
+  if (result !== null && result !== undefined) return result;
+
+  // Result was null — unsnapshot and retry once
+  console.log(`[${label}] Null result — unsnapshot retry...`);
+  try {
+    await forceFreshDbFromBlob();
+    await resetPrisma();
+  } catch (e) {
+    console.warn(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
+  }
+  return await query();
+}

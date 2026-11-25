@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, withUnsnapshot } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { takeUserSnapshot, verifySnapshot } from '@/lib/dbSnapshot';
 
@@ -40,8 +40,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token.' }, { status: 401 });
     }
 
-    // Use retry to handle cold-start DB restore timing
-    const snapshot = await withRetry(async () => {
+    const snapshot = await withUnsnapshot('Snapshot GET', async () => {
       const prisma = await getPrisma();
       const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
       if (!user) {
