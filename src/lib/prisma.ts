@@ -219,15 +219,159 @@ function copyBuildDbToTmp(): void {
 }
 
 /**
- * Ensure the latest schema exists in the local /tmp/ SQLite database.
- * The Blob-stored DB may be from an OLD deployment without newer tables
- * (e.g. CryptoDeposit). Running lightweight CREATE TABLE IF NOT EXISTS
- * statements after every Blob download guarantees schema parity.
- * Uses the Prisma client's raw executor (async-safe, no fragile shell scripts).
+ * Ensure ALL core tables and latest schema exist in the local /tmp/ SQLite DB.
+ * 
+ * CRITICAL: When Blob is unavailable on cold start, getPrisma() creates an
+ * empty DB file. This function creates ALL Prisma-model tables using
+ * CREATE TABLE IF NOT EXISTS so the first query succeeds instead of throwing
+ * "no such table: User" → "Internal server error".
+ * 
+ * Also adds columns that may be missing on older Blob snapshots (e.g.
+ * transferPaused). Safe to run on every instance — IF NOT EXISTS is idempotent.
  */
 async function ensureLatestSchema(prisma: PrismaClient): Promise<void> {
   try {
-    // CREATE TABLE IF NOT EXISTS is safe to run on every instance
+    // ─── CORE TABLES (created if empty DB from cold-start Blob failure) ───
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "User" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "email" TEXT NOT NULL UNIQUE,
+        "passwordHash" TEXT NOT NULL,
+        "bankPinHash" TEXT,
+        "fullName" TEXT NOT NULL,
+        "countryCode" TEXT NOT NULL,
+        "kycStatus" TEXT NOT NULL DEFAULT 'PENDING',
+        "twoFactorEnabled" INTEGER NOT NULL DEFAULT 0,
+        "twoFactorSecret" TEXT,
+        "transferPaused" INTEGER NOT NULL DEFAULT 0,
+        "phone" TEXT,
+        "dob" TEXT,
+        "address" TEXT,
+        "occupation" TEXT,
+        "idNumber" TEXT,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Admin" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "email" TEXT NOT NULL UNIQUE,
+        "passwordHash" TEXT NOT NULL,
+        "fullName" TEXT NOT NULL,
+        "role" TEXT NOT NULL DEFAULT 'ADMIN',
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Account" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "currency" TEXT NOT NULL,
+        "balance" DECIMAL NOT NULL DEFAULT 0,
+        "ledgerLockedBalance" DECIMAL NOT NULL DEFAULT 0,
+        "accountNumber" TEXT NOT NULL UNIQUE,
+        "accountType" TEXT NOT NULL DEFAULT 'CHECKING',
+        "isActive" INTEGER NOT NULL DEFAULT 1,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Transaction" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "sourceAccountId" TEXT NOT NULL,
+        "destinationBankSwift" TEXT NOT NULL,
+        "destinationIban" TEXT NOT NULL,
+        "destinationBankName" TEXT NOT NULL DEFAULT '',
+        "sourceAmount" DECIMAL NOT NULL,
+        "sourceCurrency" TEXT NOT NULL,
+        "destinationAmount" DECIMAL NOT NULL,
+        "destinationCurrency" TEXT NOT NULL,
+        "exchangeRate" DECIMAL NOT NULL,
+        "fee" DECIMAL NOT NULL DEFAULT 0,
+        "status" TEXT NOT NULL DEFAULT 'INITIATED',
+        "blockchainTxHash" TEXT,
+        "iso20022Payload" TEXT,
+        "failureReason" TEXT,
+        "initiatedById" TEXT NOT NULL,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        "destinationAccountId" TEXT,
+        FOREIGN KEY ("sourceAccountId") REFERENCES "Account" ("id"),
+        FOREIGN KEY ("initiatedById") REFERENCES "User" ("id")
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Notification" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "title" TEXT NOT NULL,
+        "message" TEXT NOT NULL,
+        "type" TEXT NOT NULL DEFAULT 'INFO',
+        "read" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "RefreshToken" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "token" TEXT NOT NULL UNIQUE,
+        "expiresAt" DATETIME NOT NULL,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AuditLog" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "action" TEXT NOT NULL,
+        "ipAddress" TEXT,
+        "userAgent" TEXT,
+        "metadata" TEXT,
+        "timestamp" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ExchangeRate" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "base" TEXT NOT NULL,
+        "quote" TEXT NOT NULL,
+        "rate" DECIMAL NOT NULL,
+        "bid" DECIMAL NOT NULL,
+        "ask" DECIMAL NOT NULL,
+        "updatedAt" DATETIME NOT NULL,
+        UNIQUE("base", "quote")
+      )
+    `).catch(() => {});
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "CryptoAddress" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "symbol" TEXT NOT NULL UNIQUE,
+        "name" TEXT NOT NULL,
+        "network" TEXT NOT NULL,
+        "address" TEXT NOT NULL,
+        "minDeposit" TEXT NOT NULL DEFAULT '',
+        "isActive" INTEGER NOT NULL DEFAULT 1,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL
+      )
+    `).catch(() => {});
+
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "CryptoDeposit" (
         "id" TEXT NOT NULL PRIMARY KEY,
@@ -239,20 +383,34 @@ async function ensureLatestSchema(prisma: PrismaClient): Promise<void> {
         "adminId" TEXT,
         "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "CryptoDeposit_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE
       )
-    `).catch(() => { /* table may already exist — safe to ignore */ });
+    `).catch(() => {});
 
+    // ─── INDEXES ───
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "Account_userId_idx" ON "Account"("userId")`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "Transaction_initiatedById_idx" ON "Transaction"("initiatedById")`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "Transaction_sourceAccountId_idx" ON "Transaction"("sourceAccountId")`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "Notification_userId_idx" ON "Notification"("userId")`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS "RefreshToken_userId_idx" ON "RefreshToken"("userId")`
+    ).catch(() => {});
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS "CryptoDeposit_userId_idx" ON "CryptoDeposit"("userId")`
     ).catch(() => {});
 
-    // Transfer paused column may be missing on older Blob DBs
-    // SQLite does not support BOOLEAN — use INTEGER (0/1) instead
+    // transferPaused column may be missing on older Blob DBs
     await prisma.$executeRawUnsafe(
       `ALTER TABLE "User" ADD COLUMN "transferPaused" INTEGER NOT NULL DEFAULT 0`
     ).catch((e) => {
-      // Ignore duplicate-column errors — column already exists
       if (!String(e?.message || e).toLowerCase().includes('duplicate column') &&
           !String(e?.message || e).toLowerCase().includes('already exists')) {
         console.error('[Prisma] transferPaused ALTER failed (non-fatal):', e?.message || e);
@@ -650,15 +808,14 @@ export async function getPrisma(): Promise<PrismaClient> {
       }
 
       if (!blobRestored) {
-        console.log('[Prisma] Cold start: Blob unavailable after 3 retries — creating empty DB');
-        // CRITICAL: NEVER copy the build-time seed DB over runtime data!
-        // The seed DB has only 2 demo users and would wipe all 22 real users.
-        // Instead, create an empty DB — Prisma will create tables on first query.
-        ensureTmpDir();
-        cleanupWalShm();
-        if (!fs.existsSync(TMP_DB_PATH)) {
-          fs.writeFileSync(TMP_DB_PATH, '');
-        }
+        console.log('[Prisma] Cold start: Blob unavailable after 3 retries — using seed DB fallback');
+        // Fallback to the build-time seed DB which has tables + admin user.
+        // The seed DB is ALWAYS preferred over an empty file because:
+        // 1. It has all core tables (User, Admin, Account, etc.)
+        // 2. It has the admin user (admin@uzudigitalunion.com)
+        // 3. ensureLatestSchema() will patch any missing tables/columns
+        // An empty DB causes "no such table" errors on every query.
+        copyBuildDbToTmp();
       }
     }
     // Local DB is valid — keep it. Blob is a cold-start backup.

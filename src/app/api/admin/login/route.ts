@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, withUnsnapshotNull } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 /**
@@ -29,10 +29,17 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
+    
+    // Use retry + unsnapshot to handle cold-start DB restore races.
+    // When admin is not found, withUnsnapshotNull forces a fresh Blob
+    // download and retries before returning null.
     const admin = await withRetry(async () => {
-      const prisma = await getPrisma();
-      return prisma.admin.findUnique({ where: { email: normalizedEmail } });
+      return withUnsnapshotNull('Admin Login', async () => {
+        const prisma = await getPrisma();
+        return prisma.admin.findUnique({ where: { email: normalizedEmail } });
+      });
     });
+    
     if (!admin || !(await bcrypt.compare(password, admin.passwordHash))) {
       return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
     }
