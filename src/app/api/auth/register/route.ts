@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, forceDownloadFromBlob } from '@/lib/prisma';
 import { hashPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { registerSchema } from '@/lib/validations';
 import { buildOpeningAccounts } from '@/lib/accounts';
@@ -96,7 +96,12 @@ export async function POST(req: NextRequest) {
         // Try to persist DB to Blob (best-effort — user data exists in local DB)
         try {
           await syncDbToBlob();
-          // Reset Prisma client so subsequent requests see the new user
+          // Force-download from Blob so ALL instances see the new user immediately.
+          // This ensures the admin panel and other instances pick up the new user
+          // on their next request, even if they have a stale local DB.
+          try {
+            await forceDownloadFromBlob();
+          } catch {}
           await resetPrisma();
         } catch (syncErr) {
           console.error('[Register] Blob sync failed (non-fatal):', syncErr);

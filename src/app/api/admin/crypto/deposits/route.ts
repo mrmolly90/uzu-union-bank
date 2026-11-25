@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshot } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getCurrencyByCountryCode } from '@/lib/countries';
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const prisma = await getPrisma();
-    const deposits = await withUnsnapshot('Admin Crypto Deposits GET', async () => {
+    const deposits = await withUnsnapshotForce('Admin Crypto Deposits GET', async () => {
       const prisma = await getPrisma();
       return prisma.cryptoDeposit.findMany({
         include: {

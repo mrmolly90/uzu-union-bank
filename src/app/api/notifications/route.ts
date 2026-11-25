@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshot } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 /**
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     const decoded = verifyAccessToken(auth.slice(7));
     if (!decoded) return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
 
-    const notifications = await withUnsnapshot('Notifications GET', async () => {
+    const notifications = await withUnsnapshotForce('Notifications GET', async () => {
       const prisma = await getPrisma();
       return prisma.notification.findMany({
         where: { userId: decoded.sub },

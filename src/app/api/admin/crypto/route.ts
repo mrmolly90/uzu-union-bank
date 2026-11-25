@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshot } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const addresses = await withUnsnapshot('Admin Crypto GET', async () => {
+  const addresses = await withUnsnapshotForce('Admin Crypto GET', async () => {
     const prisma = await getPrisma();
     return prisma.cryptoAddress.findMany({
       orderBy: { symbol: 'asc' },

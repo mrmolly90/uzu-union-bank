@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, withUnsnapshot } from '@/lib/prisma';
+import { getPrisma, withUnsnapshotForce } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
 
-    const accounts = await withUnsnapshot('Accounts', async () => {
+    const accounts = await withUnsnapshotForce('Accounts', async () => {
       const prisma = await getPrisma();
       return prisma.account.findMany({
         where: { userId: decoded.sub },

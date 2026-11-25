@@ -877,6 +877,39 @@ export async function withUnsnapshot<T>(
 }
 
 /**
+ * UNSNAPSHOT FORCE: Like withUnsnapshot, but uses forceDownloadFromBlob()
+ * instead of forceFreshDbFromBlob(). ALWAYS downloads from Blob regardless
+ * of user counts. No "smart" comparison — always pulls the freshest Blob.
+ * 
+ * Use this for ADMIN read endpoints where you MUST see the absolute latest
+ * data from all instances. Admin reads are low-frequency, so the cost of
+ * re-downloading the DB (~500ms) is negligible compared to the guarantee
+ * that admin ALWAYS sees every user.
+ * 
+ * @param label - A short label for logging (e.g. 'Admin Users')
+ * @param query - The DB query function to execute
+ * @returns The result of the query
+ */
+export async function withUnsnapshotForce<T>(
+  label: string,
+  query: () => Promise<T>
+): Promise<T> {
+  try {
+    return await query();
+  } catch (err) {
+    // Query failed — force download from Blob and retry once
+    console.log(`[${label}] Unsnapshot retry after error:`, err instanceof Error ? err.message : String(err));
+    try {
+      await forceDownloadFromBlob();
+      await resetPrisma();
+    } catch (e) {
+      console.warn(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
+    }
+    return await query();
+  }
+}
+
+/**
  * UNSNAPSHOT NULL GUARD: Like withUnsnapshot, but specifically handles
  * the case where a DB query returns null/empty (user/account not found).
  * 

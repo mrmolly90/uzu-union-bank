@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, forceDownloadFromBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, forceDownloadFromBlob, withUnsnapshotForce } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 import { takeAdminSnapshot } from '@/lib/dbSnapshot';
 
@@ -75,7 +75,9 @@ export async function POST(req: NextRequest) {
       await resetPrisma();
     } catch {}
 
-    const snapshot = await takeAdminSnapshot();
+    const snapshot = await withUnsnapshotForce('Admin Snapshot POST', async () => {
+      return await takeAdminSnapshot();
+    });
 
     return NextResponse.json({
       success: true,

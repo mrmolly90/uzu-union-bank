@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshot } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired token.' }, { status: 401 });
     }
 
-    const deposits = await withUnsnapshot('Crypto Deposits GET', async () => {
+    const deposits = await withUnsnapshotForce('Crypto Deposits GET', async () => {
       const prisma = await getPrisma();
       return prisma.cryptoDeposit.findMany({
         where: { userId: decoded.sub },

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getPrisma, withUnsnapshot } from '@/lib/prisma';
+import { getPrisma, withUnsnapshotForce } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +22,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 
 export async function GET() {
   try {
-    const rates = await withUnsnapshot('Rates', async () => {
+    const rates = await withUnsnapshotForce('Rates', async () => {
       const prisma = await getPrisma();
       return prisma.exchangeRate.findMany();
     });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshot, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
 
-    const transactions = await withUnsnapshot('Transactions GET', async () => {
+    const transactions = await withUnsnapshotForce('Transactions GET', async () => {
       const prisma = await getPrisma();
       return prisma.transaction.findMany({
         where: { initiatedById: decoded.sub },
