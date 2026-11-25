@@ -692,9 +692,12 @@ export async function withUnsnapshot<T>(
  * UNSNAPSHOT NULL GUARD: Like withUnsnapshot, but specifically handles
  * the case where a DB query returns null/empty (user/account not found).
  * 
- * Only triggers unsnapshot when the result is null/undefined, not on errors.
- * This is ideal for login/auth routes where "not found" is the common stale
- * Blob symptom.
+ * CRITICAL: Uses forceDownloadFromBlob() which ALWAYS downloads from Blob
+ * regardless of user counts. This is necessary because:
+ * - The local DB returned null for the query — it's STALE by definition
+ * - forceFreshDbFromBlob() would KEEP the local DB if it has "more users"
+ *   (which is the WRONG behavior when the local DB is missing the user)
+ * - We need the ABSOLUTE freshest Blob, not a "smart" comparison
  * 
  * @param label - A short label for logging
  * @param query - The DB query that may return null
@@ -707,13 +710,58 @@ export async function withUnsnapshotNull<T>(
   const result = await query();
   if (result !== null && result !== undefined) return result;
 
-  // Result was null — unsnapshot and retry once
-  console.log(`[${label}] Null result — unsnapshot retry...`);
+  // Result was null — the local DB is STALE. Force download from Blob
+  // regardless of user counts. This is the ONLY way to guarantee we see
+  // users created on other instances whose sync-to-Blob succeeded.
+  console.log(`[${label}] Null result — force download from Blob...`);
   try {
-    await forceFreshDbFromBlob();
+    await forceDownloadFromBlob();
     await resetPrisma();
   } catch (e) {
     console.warn(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
   }
   return await query();
+}
+
+/**
+ * FORCE download from Blob — ALWAYS downloads regardless of user counts.
+ * Unlike forceFreshDbFromBlob() which keeps the local DB if it has more users,
+ * this function ALWAYS replaces the local DB with the freshest Blob.
+ * 
+ * Used by withUnsnapshotNull() when the local DB returned null for a query —
+ * the local DB is STALE by definition, so we need the absolute freshest Blob.
+ */
+async function forceDownloadFromBlob(): Promise<void> {
+  if (!process.env.VERCEL) return;
+  const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
+
+  try {
+    let downloadSucceeded = false;
+    try {
+      const blobBuffer = await downloadBlobToBuffer();
+      if (blobBuffer && blobBuffer.length > 4096) {
+        fs.writeFileSync(TMP_DOWNLOAD_PATH, blobBuffer);
+        downloadSucceeded = true;
+        console.log(`[Prisma] Force download: ${blobBuffer.length} bytes from Blob`);
+      }
+    } catch (err) {
+      console.warn('[Prisma] Force download failed:', err instanceof Error ? err.message : String(err));
+    }
+
+    if (!downloadSucceeded) {
+      console.log('[Prisma] Force download: Blob unavailable — keeping current DB');
+      return;
+    }
+
+    // Safe swap: reset client, replace DB file, update sync marker
+    await resetPrisma();
+    if (fs.existsSync(BLOB_SYNC_MARKER)) fs.unlinkSync(BLOB_SYNC_MARKER);
+    if (fs.existsSync(TMP_DB_PATH)) fs.unlinkSync(TMP_DB_PATH);
+    fs.renameSync(TMP_DOWNLOAD_PATH, TMP_DB_PATH);
+    writeSyncMarker(Date.now());
+    console.log('[Prisma] Force download: safely swapped in fresh Blob DB');
+  } catch (err) {
+    console.error('[Prisma] Force download non-fatal:', err instanceof Error ? err.message : String(err));
+    try { if (fs.existsSync(TMP_DOWNLOAD_PATH)) fs.unlinkSync(TMP_DOWNLOAD_PATH); } catch {}
+  }
 }
