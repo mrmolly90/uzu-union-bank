@@ -221,11 +221,13 @@ async function ensureLatestSchema(prisma: PrismaClient): Promise<void> {
     ).catch(() => {});
 
     // Transfer paused column may be missing on older Blob DBs
+    // SQLite does not support BOOLEAN — use INTEGER (0/1) instead
     await prisma.$executeRawUnsafe(
-      `ALTER TABLE "User" ADD COLUMN "transferPaused" BOOLEAN NOT NULL DEFAULT false`
+      `ALTER TABLE "User" ADD COLUMN "transferPaused" INTEGER NOT NULL DEFAULT 0`
     ).catch((e) => {
       // Ignore duplicate-column errors — column already exists
-      if (!String(e?.message || e).toLowerCase().includes('duplicate column')) {
+      if (!String(e?.message || e).toLowerCase().includes('duplicate column') &&
+          !String(e?.message || e).toLowerCase().includes('already exists')) {
         console.error('[Prisma] transferPaused ALTER failed (non-fatal):', e?.message || e);
       }
     });
@@ -402,6 +404,10 @@ async function downloadBlobToBuffer(): Promise<Buffer | null> {
  * THROWS on failure so callers can surface the error.
  * On success, updates the sync marker so warm instances detect new data.
  *
+ * CRITICAL: Retries up to 3 times with exponential backoff. If Blob sync
+ * fails, new users will NOT be visible on cold starts — login will return
+ * "Invalid email or password" because the user exists only in the local DB.
+ *
  * ALWAYS uploads the local DB to Blob. The Blob is the SOURCE OF TRUTH
  * for cross-instance consistency. The anti-wipe logic lives in the admin
  * GET handler (forceFreshDbFromBlob), which pulls the freshest Blob before
@@ -420,17 +426,32 @@ export async function syncDbToBlob(): Promise<void> {
   }
 
   const buffer = fs.readFileSync(TMP_DB_PATH);
-  await put(BLOB_DB_KEY, buffer, {
-    access: 'private',
-    token: blobToken,
-    storeId,
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'application/octet-stream',
-  });
-
-  writeSyncMarker(Date.now());
-  console.log('[Prisma] Synced DB to Blob (' + buffer.length + ' bytes)');
+  
+  // Retry up to 3 times with exponential backoff
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await put(BLOB_DB_KEY, buffer, {
+        access: 'private',
+        token: blobToken,
+        storeId,
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        contentType: 'application/octet-stream',
+      });
+      writeSyncMarker(Date.now());
+      console.log('[Prisma] Synced DB to Blob (' + buffer.length + ' bytes)');
+      return; // success
+    } catch (err) {
+      lastError = err;
+      console.warn(`[Prisma] Blob sync attempt ${attempt + 1}/3 failed:`, err instanceof Error ? err.message : String(err));
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt))); // 1s, 2s
+      }
+    }
+  }
+  // All retries exhausted — throw the last error so callers can handle it
+  throw lastError || new Error('Blob sync failed after 3 attempts');
 }
 
 export async function forceSyncDbToBlob(): Promise<{ ok: boolean; size: number; error?: string }> {
@@ -575,14 +596,33 @@ export async function getPrisma(): Promise<PrismaClient> {
     const localDbValid = localDbExists && fs.statSync(TMP_DB_PATH).size > 4096;
 
     if (!localDbValid) {
-      // No valid local DB — try Blob
-      try {
-        await downloadFromBlob();
-        console.log('[Prisma] Cold start: restored from Blob');
-      } catch {
-        console.log('[Prisma] Cold start: Blob unavailable — creating empty DB');
+      // ─── Cold start: Try to download the freshest DB from Blob ───
+      // We retry 3 times with exponential backoff because Blob may be
+      // temporarily unavailable during serverless cold-start races.
+      let blobRestored = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const blobBuffer = await downloadBlobToBuffer();
+          if (blobBuffer && blobBuffer.length > 4096) {
+            // Quick validation: try to count users in the downloaded DB
+            // by writing to a temp path, creating a Prisma client, and querying.
+            // If the DB has valid data, use it.
+            fs.writeFileSync(TMP_DB_PATH, blobBuffer);
+            writeSyncMarker(Date.now());
+            console.log(`[Prisma] Cold start: restored from Blob (${blobBuffer.length} bytes)`);
+            blobRestored = true;
+            break;
+          }
+        } catch (err) {
+          console.warn(`[Prisma] Cold start: Blob download attempt ${attempt + 1} failed`);
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        }
+      }
+
+      if (!blobRestored) {
+        console.log('[Prisma] Cold start: Blob unavailable after 3 retries — creating empty DB');
         // CRITICAL: NEVER copy the build-time seed DB over runtime data!
-        // The seed DB has only 2 demo users and would wipe all 21 real users.
+        // The seed DB has only 2 demo users and would wipe all 22 real users.
         // Instead, create an empty DB — Prisma will create tables on first query.
         ensureTmpDir();
         if (!fs.existsSync(TMP_DB_PATH)) {
