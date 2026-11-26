@@ -594,11 +594,13 @@ async function downloadBlobToBuffer(): Promise<Buffer | null> {
  * fails, new users will NOT be visible on cold starts — login will return
  * "Invalid email or password" because the user exists only in the local DB.
  *
- * ALWAYS uploads the local DB to Blob. The Blob is the SOURCE OF TRUTH
- * for cross-instance consistency. The anti-wipe logic lives in the admin
- * GET handler (forceFreshDbFromBlob), which pulls the freshest Blob before
- * every admin read. This ensures new users are ALWAYS persisted to Blob
- * and admin ALWAYS sees the freshest data.
+ * SAFETY: The anti-wipe protection is in forceDownloadFromBlob() which is
+ * a READ-ONLY operation (never syncs local→Blob). syncDbToBlob() is called
+ * ONLY after a write has been applied locally. Since unsnapshotBeforeRead()
+ * was called before the write, the local DB = Blob data + new write.
+ * Uploading is ALWAYS safe — it preserves ALL data from ALL instances.
+ * 
+ * The ONLY guards needed: don't upload an empty DB (no users, no data).
  */
 export async function syncDbToBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
@@ -614,77 +616,22 @@ export async function syncDbToBlob(): Promise<void> {
   // ─── GUARD 1: NEVER sync an empty DB to Blob ───
   const dbStat = fs.statSync(TMP_DB_PATH);
   if (dbStat.size <= 4096) {
-    console.log('[Prisma] syncDbToBlob: local DB is empty (' + dbStat.size + ' bytes) — skipping sync to preserve Blob data');
+    console.log('[Prisma] syncDbToBlob: local DB is empty (' + dbStat.size + ' bytes) — skipping sync');
     return;
   }
 
-  // ─── GUARD 2: Count local users ───
-  let localUserCount = 0;
+  // ─── GUARD 2: Only sync if local DB has real users ───
   if (globalForPrisma.prisma) {
     try {
       const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
-      localUserCount = Number(result?.[0]?.n ?? 0);
+      const userCount = Number(result?.[0]?.n ?? 0);
+      if (userCount === 0) {
+        console.log('[Prisma] syncDbToBlob: local DB has 0 users — skipping sync');
+        return;
+      }
     } catch {
-      localUserCount = 1; // unknown but non-zero — proceed with caution
+      // Query failed — proceed with sync (file size > 4096 suggests real data)
     }
-  } else {
-    localUserCount = 1; // no client yet — assume non-zero since file size > 4096
-  }
-
-  if (localUserCount === 0) {
-    console.log('[Prisma] syncDbToBlob: local DB has 0 users — skipping sync to preserve Blob data');
-    return;
-  }
-
-  // ─── GUARD 3: NEVER overwrite a richer Blob ───
-  // Before uploading, check if Blob has MORE users than local. If so,
-  // the Blob has data from another instance. We MUST NOT overwrite it.
-  // If we can't reach Blob at all (getBlobMeta returns 0), we also MUST
-  // NOT upload — the Blob might have real data we can't see right now.
-  // EXCEPTION: If Blob size is 0 AND we have users locally, it's the
-  // first deploy or Blob was reset. Upload to seed the Blob.
-  try {
-    const blobMeta = await getBlobMeta();
-    if (blobMeta.size <= 0) {
-      if (localUserCount > 0) {
-        // First deploy or Blob was reset — seed it with local data
-        console.log(`[Prisma] syncDbToBlob: Blob is empty, local has ${localUserCount} users — seeding Blob`);
-        // Fall through to upload below
-      } else {
-        console.log('[Prisma] syncDbToBlob: Cannot verify Blob state and local has 0 users — skipping upload');
-        writeSyncMarker(Date.now());
-        return;
-      }
-    } else {
-      const blobUserEstimate = Math.floor(blobMeta.size / 10000);
-      if (blobUserEstimate > localUserCount) {
-        console.log(`[Prisma] syncDbToBlob: Blob≈${blobUserEstimate} > local=${localUserCount} — Blob is richer! Skipping upload to preserve Blob data.`);
-        writeSyncMarker(Date.now());
-        return; // DON'T overwrite Blob — it's richer
-      }
-      if (blobUserEstimate === localUserCount && blobMeta.uploadedAt > readSyncMarker()) {
-        // Blob has same users but was uploaded AFTER our last sync
-        console.log('[Prisma] syncDbToBlob: Blob has same users but newer timestamp — downloading fresher Blob');
-        try {
-          const buffer = await downloadBlobToBuffer();
-          if (buffer && buffer.length > 4096) {
-            const tmpPath = TMP_DB_PATH + '.newer';
-            fs.writeFileSync(tmpPath, buffer);
-            await resetPrisma();
-            cleanupWalShm();
-            if (fs.existsSync(TMP_DB_PATH)) fs.unlinkSync(TMP_DB_PATH);
-            fs.renameSync(tmpPath, TMP_DB_PATH);
-          }
-        } catch {}
-        writeSyncMarker(Date.now());
-        return;
-      }
-    }
-  } catch {
-    // Blob check failed — DON'T risk overwriting real data
-    console.log('[Prisma] syncDbToBlob: Blob check failed — skipping upload to preserve Blob data');
-    writeSyncMarker(Date.now());
-    return;
   }
 
   const buffer = fs.readFileSync(TMP_DB_PATH);

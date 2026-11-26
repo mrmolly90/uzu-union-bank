@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, unsnapshotBeforeRead, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyAccessToken, sanitizeUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +32,9 @@ export async function GET(req: NextRequest) {
     if (!decoded) {
       return NextResponse.json({ error: 'Invalid or expired token.' }, { status: 401 });
     }
+
+    // Proactive unsnapshot: download freshest Blob BEFORE checking user
+    await unsnapshotBeforeRead();
 
     const user = await withRetry(async () => {
       return withUnsnapshotNull('Auth Me', async () => {

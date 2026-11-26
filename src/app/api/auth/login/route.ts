@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, unsnapshotBeforeRead, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyPassword, getJwtSecret } from '@/lib/auth';
 import jwt from 'jsonwebtoken';
 
@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+
+    // Proactive unsnapshot: download freshest Blob BEFORE checking user
+    await unsnapshotBeforeRead();
 
     // Use retry + unsnapshot to handle cold-start DB restore races.
     // When user is not found, withUnsnapshotNull forces a fresh Blob
