@@ -949,6 +949,14 @@ export async function withUnsnapshotNull<T>(
  * Unlike forceFreshDbFromBlob() which keeps the local DB if it has more users,
  * this function ALWAYS replaces the local DB with the freshest Blob.
  * 
+ * CRITICAL: Syncs local DB to Blob FIRST before downloading. If the sync
+ * succeeds, the local DB is already the freshest — we KEEP it and skip the
+ * download. Only if sync fails do we download from Blob (which may have
+ * data from another instance).
+ * 
+ * This ensures Blob always has the latest data and we never overwrite a
+ * richer local DB with a stale Blob.
+ * 
  * Used by withUnsnapshotNull() when the local DB returned null for a query —
  * the local DB is STALE by definition, so we need the absolute freshest Blob.
  */
@@ -957,6 +965,27 @@ export async function forceDownloadFromBlob(): Promise<void> {
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
   try {
+    // ─── STEP 1: Sync local DB to Blob FIRST ───
+    // If sync succeeds, local DB is already the freshest — keep it.
+    // Only download from Blob if sync fails (Blob may have data from
+    // another instance that we don't have locally).
+    let syncSucceeded = false;
+    try {
+      await syncDbToBlob();
+      syncSucceeded = true;
+      console.log('[Prisma] Force download: local→Blob sync OK — keeping local DB');
+    } catch (syncErr) {
+      console.warn('[Prisma] Force download: local→Blob sync failed:', syncErr instanceof Error ? syncErr.message : String(syncErr));
+    }
+
+    if (syncSucceeded) {
+      // Local DB is already the freshest — no download needed.
+      // Just update the sync marker so warm instances don't re-download.
+      writeSyncMarker(Date.now());
+      return;
+    }
+
+    // ─── STEP 2: Sync failed — download from Blob (may have fresher data) ───
     let downloadSucceeded = false;
     try {
       const blobBuffer = await downloadBlobToBuffer();
