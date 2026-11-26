@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
-import { getPrisma, checkDbHealth, forceSyncDbToBlob } from '@/lib/prisma';
+import { getPrisma, checkDbHealth, forceSyncDbToBlob, unsnapshotBeforeRead } from '@/lib/prisma';
 
 export async function GET() {
-  // First, initialize Prisma (this triggers restoreFromBlob on cold start)
+  // First, download freshest Blob so health reflects ALL instances
+  await unsnapshotBeforeRead();
+
+  // Initialize Prisma and count records
   let userCount = 0;
   let accountCount = 0;
   let adminCount = 0;
