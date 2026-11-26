@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
@@ -77,6 +77,9 @@ export async function GET(req: NextRequest) {
     if (!decoded) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
+
+    // Proactive unsnapshot: download freshest Blob BEFORE reading
+    await unsnapshotBeforeRead();
 
     const transactions = await withUnsnapshotForce('Transactions GET', async () => {
       const prisma = await getPrisma();

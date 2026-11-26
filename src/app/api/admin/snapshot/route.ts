@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, forceDownloadFromBlob, withUnsnapshotForce } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 import { takeAdminSnapshot } from '@/lib/dbSnapshot';
 
@@ -20,28 +20,20 @@ function verifyAdmin(req: NextRequest) {
  * and stats. Uses takeAdminSnapshot() which does a single efficient DB query.
  * Every registered user appears here instantly — the "unsnapshot" for admin.
  *
- * UNSNAPSHOT GUARANTEE: Every admin GET force-downloads from Blob and
- * replaces the local DB. NO user-count comparison — admin ALWAYS sees the
- * freshest Blob data. This ensures admin sees the MAXIMUM user count across
- * ALL instances, even if this local instance has different data.
- *
- * CRITICAL: Does NOT sync local→Blob first (would push stale data over good).
- * Only downloads from Blob. The local DB is always replaced by Blob's version.
+ * UNSNAPSHOT GUARANTEE: Every admin GET proactively downloads the freshest
+ * Blob data BEFORE reading. This ensures admin ALWAYS sees the MAXIMUM user
+ * count across ALL instances, even if this local instance has different data.
+ * No user-count comparison — always pulls the freshest Blob.
  */
 export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    // ─── FORCE DOWNLOAD: Always pull the freshest Blob, replace local DB ───
-    // No user-count comparison. Admin MUST see the absolute latest data.
-    // If Blob is unavailable, keep the current local DB as fallback.
-    try {
-      await forceDownloadFromBlob();
-      await resetPrisma();
-    } catch (dlErr) {
-      console.warn('[Admin Snapshot] Blob download failed — using local DB:', dlErr instanceof Error ? dlErr.message : String(dlErr));
-    }
+    // ─── PROACTIVE UNSNAPSHOT: Download freshest Blob BEFORE reading ───
+    // This ensures admin ALWAYS sees every user across ALL instances.
+    // syncDbToBlob() guard prevents empty DBs from overwriting Blob data.
+    await unsnapshotBeforeRead();
 
     const snapshot = await takeAdminSnapshot();
 
@@ -69,11 +61,8 @@ export async function POST(req: NextRequest) {
     // Force sync to Blob so data survives cold starts
     try { await syncDbToBlob(); } catch {}
 
-    // Force download from Blob to ensure we see the freshest data
-    try {
-      await forceDownloadFromBlob();
-      await resetPrisma();
-    } catch {}
+    // Proactive unsnapshot before reading
+    await unsnapshotBeforeRead();
 
     const snapshot = await withUnsnapshotForce('Admin Snapshot POST', async () => {
       return await takeAdminSnapshot();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 /**
@@ -25,6 +25,9 @@ export async function GET(req: NextRequest) {
     if (!auth?.startsWith('Bearer ')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const decoded = verifyAccessToken(auth.slice(7));
     if (!decoded) return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+
+    // Proactive unsnapshot: download freshest Blob BEFORE reading
+    await unsnapshotBeforeRead();
 
     const notifications = await withUnsnapshotForce('Notifications GET', async () => {
       const prisma = await getPrisma();

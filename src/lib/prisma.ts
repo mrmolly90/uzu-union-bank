@@ -729,68 +729,46 @@ export async function checkDbHealth(): Promise<{
 }
 
 /** Throttle window for warm-instance Blob freshness checks (ms). */
-const BLOB_CHECK_INTERVAL = 10_000;
+const BLOB_CHECK_INTERVAL = 2_000;
 let lastBlobCheck = 0;
 
 /**
  * Get the Prisma client singleton with cross-instance consistency.
- * Warm instances reuse the existing client and only check Blob freshness
- * every 10s (throttled) to avoid head() latency on every request.
+ * Warm instances reuse the existing client and check Blob freshness
+ * every 2s (throttled) to avoid head() latency on every request.
  *
- * CRITICAL: The warm-instance Blob check compares USER COUNTS, not just
- * timestamps. If the local DB has MORE users than the Blob, we NEVER
- * download from Blob — the local DB is authoritative. This prevents the
- * "new users disappear" bug where a stale Blob overwrites real data.
+ * CRITICAL: When Blob is newer, we ALWAYS download from Blob. The safety
+ * is in syncDbToBlob() which guards against syncing empty DBs. So even if
+ * a cold-start instance calls getPrisma(), it will download the real Blob
+ * data — not overwrite it with an empty DB.
  */
 export async function getPrisma(): Promise<PrismaClient> {
   // Warm instance with existing client
   if (globalForPrisma.prisma) {
     if (process.env.VERCEL) {
       const now = Date.now();
-      // Throttle Blob check to once per 10s — reduces latency on every request
+      // Throttle Blob check to once per 2s — reduces latency on every request
       if (now - lastBlobCheck > BLOB_CHECK_INTERVAL) {
         lastBlobCheck = now;
         try {
           const blobNewer = await isBlobNewerThanLocal();
           if (blobNewer) {
-            // ─── USER-COUNT CHECK: Only download if Blob has MORE users ───
-            // Count local users first
-            let localUserCount = -1;
+            console.log(`[Prisma] Warm instance: Blob is newer — downloading fresh Blob`);
+            // SAFE SWAP: Download to temp buffer first, only swap if successful
             try {
-              const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
-              localUserCount = Number(result?.[0]?.n ?? -1);
-            } catch { /* query failed — proceed with caution */ }
-
-            // Estimate Blob user count from size
-            const blobMeta = await getBlobMeta();
-            const blobUserEstimate = blobMeta.size > 0 ? Math.floor(blobMeta.size / 10000) : -1;
-
-            // CRITICAL: If local has MORE or EQUAL users, NEVER download from Blob.
-            // The local DB is the source of truth. Downloading a stale Blob would
-            // wipe real users and their balances.
-            if (localUserCount > 0 && (blobUserEstimate < 0 || localUserCount >= blobUserEstimate)) {
-              console.log(`[Prisma] Warm instance: local=${localUserCount} >= blob≈${blobUserEstimate} — keeping local DB`);
-              // Update sync marker to prevent repeated checks
-              writeSyncMarker(Date.now());
-            } else {
-              console.log(`[Prisma] Blob is newer than local DB, re-downloading...`);
-              // SAFE SWAP: Download to temp buffer first, only swap if successful
-              try {
-                const blobBuffer = await downloadBlobToBuffer();
-                if (blobBuffer && blobBuffer.length > 4096) {
-                  await globalForPrisma.prisma.$disconnect().catch(() => {});
-                  globalForPrisma.prisma = undefined as unknown as PrismaClient;
-                  cleanupWalShm();
-                  fs.writeFileSync(TMP_DB_PATH, blobBuffer);
-                  writeSyncMarker(Date.now());
-                  console.log('[Prisma] Warm instance: safely swapped in fresh Blob DB');
-                } else {
-                  console.log('[Prisma] Warm instance: Blob empty — keeping current DB');
-                }
-              } catch {
-                // CRITICAL: NEVER copy the build-time seed DB over runtime data!
-                console.log('[Prisma] Warm instance: Blob download failed — keeping current DB');
+              const blobBuffer = await downloadBlobToBuffer();
+              if (blobBuffer && blobBuffer.length > 4096) {
+                await globalForPrisma.prisma.$disconnect().catch(() => {});
+                globalForPrisma.prisma = undefined as unknown as PrismaClient;
+                cleanupWalShm();
+                fs.writeFileSync(TMP_DB_PATH, blobBuffer);
+                writeSyncMarker(Date.now());
+                console.log('[Prisma] Warm instance: safely swapped in fresh Blob DB');
+              } else {
+                console.log('[Prisma] Warm instance: Blob empty — keeping current DB');
               }
+            } catch {
+              console.log('[Prisma] Warm instance: Blob download failed — keeping current DB');
             }
           }
         } catch {
@@ -862,6 +840,32 @@ export async function resetPrisma(): Promise<void> {
       // Ignore disconnect errors
     }
     globalForPrisma.prisma = undefined as unknown as PrismaClient;
+  }
+}
+
+/**
+ * PROACTIVE UNSNAPSHOT: Call this BEFORE every admin/user read operation.
+ * Unlike withUnsnapshotNull (which only reacts AFTER a null result), this
+ * proactively downloads the freshest Blob data BEFORE the query runs.
+ * 
+ * This ensures:
+ * 1. New users registered on other instances are ALWAYS visible immediately
+ * 2. Admin panel ALWAYS shows the maximum user count across ALL instances
+ * 3. No stale local DB can hide data from any endpoint
+ * 
+ * Uses forceDownloadFromBlob() which syncs local→Blob first (if local has
+ * real data), then downloads the freshest Blob. The syncDbToBlob() guard
+ * prevents empty DBs from overwriting Blob data.
+ * 
+ * Call this at the START of every GET endpoint that reads user data.
+ */
+export async function unsnapshotBeforeRead(): Promise<void> {
+  if (!process.env.VERCEL) return;
+  try {
+    await forceDownloadFromBlob();
+    await resetPrisma();
+  } catch (err) {
+    console.warn('[Unsnapshot] Proactive unsnapshot failed:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -969,7 +973,7 @@ export async function withUnsnapshotNull<T>(
 }
 
 /**
- * FORCE download from Blob — ALWAYS downloads regardless of user counts.
+ * FORCE download from Blob — ALWAYS downloads the freshest Blob data.
  * Unlike forceFreshDbFromBlob() which keeps the local DB if it has more users,
  * this function ALWAYS replaces the local DB with the freshest Blob.
  * 
@@ -978,8 +982,10 @@ export async function withUnsnapshotNull<T>(
  * download. Only if sync fails do we download from Blob (which may have
  * data from another instance).
  * 
- * This ensures Blob always has the latest data and we never overwrite a
- * richer local DB with a stale Blob.
+ * SAFETY: syncDbToBlob() has its own guard — it will NOT sync an empty DB
+ * (0 users or <=4096 bytes) to Blob. So even if this function is called
+ * on a cold-start instance with an empty DB, the sync will be skipped and
+ * we'll download the real Blob data instead.
  * 
  * Used by withUnsnapshotNull() when the local DB returned null for a query —
  * the local DB is STALE by definition, so we need the absolute freshest Blob.
@@ -989,51 +995,16 @@ export async function forceDownloadFromBlob(): Promise<void> {
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
   try {
-    // ─── STEP 1: Count users in local DB ───
-    // CRITICAL: NEVER sync an empty/stale local DB to Blob. If the local DB
-    // has 0 users (cold start, empty file) or only 1 user (seed DB with admin),
-    // it would OVERWRITE the real Blob data and permanently destroy all users.
-    let localUserCount = 0;
-    try {
-      if (fs.existsSync(TMP_DB_PATH) && fs.statSync(TMP_DB_PATH).size > 4096) {
-        const prisma = globalForPrisma.prisma;
-        if (prisma) {
-          const result = await prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
-          localUserCount = Number(result?.[0]?.n ?? 0);
-        } else {
-          // No Prisma client — file exists with size, assume real data
-          localUserCount = 1; // unknown but non-zero
-        }
-      }
-    } catch {
-      localUserCount = 0;
-    }
-
-    // ─── STEP 2: Estimate Blob user count from metadata ───
-    let blobUserEstimate = -1;
-    try {
-      const blobMeta = await getBlobMeta();
-      blobUserEstimate = blobMeta.size > 0 ? Math.floor(blobMeta.size / 10000) : -1;
-    } catch {
-      blobUserEstimate = -1;
-    }
-
-    // ─── STEP 3: Decide: sync local→Blob or download Blob→local? ───
-    // Only sync local→Blob if local has MORE users than Blob estimate.
-    // If local has 0-1 users (empty/seed DB) or fewer than Blob, download instead.
-    // This prevents a seed-DB (1 admin user) from overwriting a 22-user Blob.
+    // ─── STEP 1: Sync local DB to Blob FIRST (if local has real data) ───
+    // syncDbToBlob() has its own guard against syncing empty DBs.
+    // If sync succeeds, local DB is already the freshest — keep it.
     let syncSucceeded = false;
-    if (localUserCount > 1 && (blobUserEstimate < 0 || localUserCount >= blobUserEstimate)) {
-      // Local has real data (multiple users) and is at least as rich as Blob
-      try {
-        await syncDbToBlob();
-        syncSucceeded = true;
-        console.log(`[Prisma] Force download: local=${localUserCount} >= blob≈${blobUserEstimate} — synced local→Blob, keeping local DB`);
-      } catch (syncErr) {
-        console.warn('[Prisma] Force download: local→Blob sync failed:', syncErr instanceof Error ? syncErr.message : String(syncErr));
-      }
-    } else {
-      console.log(`[Prisma] Force download: local=${localUserCount} < blob≈${blobUserEstimate} — skipping sync, downloading fresh Blob`);
+    try {
+      await syncDbToBlob();
+      syncSucceeded = true;
+      console.log('[Prisma] Force download: local→Blob sync OK — keeping local DB');
+    } catch (syncErr) {
+      console.warn('[Prisma] Force download: local→Blob sync failed:', syncErr instanceof Error ? syncErr.message : String(syncErr));
     }
 
     if (syncSucceeded) {
@@ -1042,7 +1013,7 @@ export async function forceDownloadFromBlob(): Promise<void> {
       return;
     }
 
-    // ─── STEP 4: Sync skipped or failed — download from Blob ───
+    // ─── STEP 2: Sync failed — download from Blob ───
     let downloadSucceeded = false;
     try {
       const blobBuffer = await downloadBlobToBuffer();

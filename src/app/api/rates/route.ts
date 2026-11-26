@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getPrisma, withUnsnapshotForce } from '@/lib/prisma';
+import { getPrisma, unsnapshotBeforeRead, withUnsnapshotForce } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +22,9 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 
 export async function GET() {
   try {
+    // Proactive unsnapshot: download freshest Blob BEFORE reading
+    await unsnapshotBeforeRead();
+
     const rates = await withUnsnapshotForce('Rates', async () => {
       const prisma = await getPrisma();
       return prisma.exchangeRate.findMany();
@@ -32,3 +35,4 @@ export async function GET() {
     return NextResponse.json({ error: 'Exchange rates are temporarily unavailable.' }, { status: 503 });
   }
 }
+

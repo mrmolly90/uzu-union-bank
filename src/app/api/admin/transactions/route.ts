@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getJwtSecret } from '@/lib/auth';
@@ -38,6 +38,9 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 export async function GET(req: NextRequest) {
   const admin = verifyAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // Proactive unsnapshot: download freshest Blob BEFORE reading
+  await unsnapshotBeforeRead();
 
   const transactions = await withUnsnapshotForce('Admin Transactions GET', async () => {
     const prisma = await getPrisma();
