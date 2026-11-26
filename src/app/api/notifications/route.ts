@@ -47,6 +47,9 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    // Download freshest Blob BEFORE the write so we operate on merged data
+    await unsnapshotBeforeRead();
+
     const prisma = await getPrisma();
     const auth = req.headers.get('authorization');
     if (!auth?.startsWith('Bearer ')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

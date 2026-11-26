@@ -62,6 +62,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'symbol, amount, and blockchainTxHash are required.' }, { status: 400 });
     }
 
+    // Download freshest Blob BEFORE the write so we operate on merged data
+    await unsnapshotBeforeRead();
+
     const prisma = await getPrisma();
 
     // Create the deposit request

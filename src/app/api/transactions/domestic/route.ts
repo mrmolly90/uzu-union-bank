@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
@@ -19,6 +19,9 @@ export async function POST(req: NextRequest) {
     if (!decoded) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
+
+    // Download freshest Blob BEFORE the write so we operate on merged data
+    await unsnapshotBeforeRead();
 
     const body = await req.json();
     const { sourceAccountId, destinationAccountId, amount } = body;

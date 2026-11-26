@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, forceDownloadFromBlob } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, forceDownloadFromBlob, unsnapshotBeforeRead } from '@/lib/prisma';
 import { hashPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { registerSchema } from '@/lib/validations';
 import { buildOpeningAccounts } from '@/lib/accounts';
@@ -17,6 +17,15 @@ function isUniqueViolation(err: unknown): boolean {
 
 export async function POST(req: NextRequest) {
   try {
+    // ─── STEP 0: Download freshest Blob BEFORE reading/writing ───
+    // This ensures the email uniqueness check and user creation happen
+    // on the MERGED data from ALL instances. Without this, Instance A
+    // could have 23 users and Instance B could have 22 — and a register
+    // on Instance B would create user #23 on a stale DB, then syncDbToBlob()
+    // would OVERWRITE Instance A's user #23 with Instance B's user #23.
+    // One user would be permanently destroyed.
+    await unsnapshotBeforeRead();
+
     const prisma = await getPrisma();
     const body = await req.json().catch(() => null);
     if (!body) {

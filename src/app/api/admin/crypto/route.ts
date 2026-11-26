@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
+    // Download freshest Blob BEFORE the write so we operate on merged data
+    await unsnapshotBeforeRead();
+
     const prisma = await getPrisma();
     const { symbol, name, network, address, minDeposit } = await req.json();
 

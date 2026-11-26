@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { getPrisma, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, unsnapshotBeforeRead, withUnsnapshotNull } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 /**
@@ -30,6 +30,9 @@ export async function POST(req: NextRequest) {
 
     const normalizedEmail = String(email).trim().toLowerCase();
     
+    // Proactive unsnapshot: download freshest Blob BEFORE reading admin
+    await unsnapshotBeforeRead();
+
     // Use retry + unsnapshot to handle cold-start DB restore races.
     // When admin is not found, withUnsnapshotNull forces a fresh Blob
     // download and retries before returning null.

@@ -111,6 +111,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token.' }, { status: 401 });
     }
 
+    // Download freshest Blob BEFORE the write so we operate on merged data
+    await unsnapshotBeforeRead();
+
     const prisma = await getPrisma();
     const body = await req.json();
     const parsed = transferSchema.safeParse(body);
