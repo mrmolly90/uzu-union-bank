@@ -636,6 +636,57 @@ export async function syncDbToBlob(): Promise<void> {
     return;
   }
 
+  // ─── GUARD 3: NEVER overwrite a richer Blob ───
+  // Before uploading, check if Blob has MORE users than local. If so,
+  // the Blob has data from another instance. We MUST NOT overwrite it.
+  // If we can't reach Blob at all (getBlobMeta returns 0), we also MUST
+  // NOT upload — the Blob might have real data we can't see right now.
+  // EXCEPTION: If Blob size is 0 AND we have users locally, it's the
+  // first deploy or Blob was reset. Upload to seed the Blob.
+  try {
+    const blobMeta = await getBlobMeta();
+    if (blobMeta.size <= 0) {
+      if (localUserCount > 0) {
+        // First deploy or Blob was reset — seed it with local data
+        console.log(`[Prisma] syncDbToBlob: Blob is empty, local has ${localUserCount} users — seeding Blob`);
+        // Fall through to upload below
+      } else {
+        console.log('[Prisma] syncDbToBlob: Cannot verify Blob state and local has 0 users — skipping upload');
+        writeSyncMarker(Date.now());
+        return;
+      }
+    } else {
+      const blobUserEstimate = Math.floor(blobMeta.size / 10000);
+      if (blobUserEstimate > localUserCount) {
+        console.log(`[Prisma] syncDbToBlob: Blob≈${blobUserEstimate} > local=${localUserCount} — Blob is richer! Skipping upload to preserve Blob data.`);
+        writeSyncMarker(Date.now());
+        return; // DON'T overwrite Blob — it's richer
+      }
+      if (blobUserEstimate === localUserCount && blobMeta.uploadedAt > readSyncMarker()) {
+        // Blob has same users but was uploaded AFTER our last sync
+        console.log('[Prisma] syncDbToBlob: Blob has same users but newer timestamp — downloading fresher Blob');
+        try {
+          const buffer = await downloadBlobToBuffer();
+          if (buffer && buffer.length > 4096) {
+            const tmpPath = TMP_DB_PATH + '.newer';
+            fs.writeFileSync(tmpPath, buffer);
+            await resetPrisma();
+            cleanupWalShm();
+            if (fs.existsSync(TMP_DB_PATH)) fs.unlinkSync(TMP_DB_PATH);
+            fs.renameSync(tmpPath, TMP_DB_PATH);
+          }
+        } catch {}
+        writeSyncMarker(Date.now());
+        return;
+      }
+    }
+  } catch {
+    // Blob check failed — DON'T risk overwriting real data
+    console.log('[Prisma] syncDbToBlob: Blob check failed — skipping upload to preserve Blob data');
+    writeSyncMarker(Date.now());
+    return;
+  }
+
   const buffer = fs.readFileSync(TMP_DB_PATH);
   
   // Retry up to 3 times with exponential backoff
@@ -975,22 +1026,21 @@ export async function withUnsnapshotNull<T>(
 }
 
 /**
- * FORCE download from Blob — replaces local DB with Blob data ONLY if
- * Blob has MORE users. NEVER syncs local→Blob first (READ-ONLY).
+ * FORCE download from Blob — ALWAYS downloads fresh Blob and replaces
+ * the local DB. This is a READ-ONLY operation — it NEVER syncs local→Blob.
  * 
  * CRITICAL: The ONLY places that should sync to Blob are WRITE endpoints
  * (register, fund, transfer, admin transactions, etc.). This function is
- * called by admin GET endpoints and unsnapshot handlers. If it synced
- * local→Blob first, a stale local DB (22 users) would OVERWRITE a richer
- * Blob (23 users) — permanently destroying the newest user.
+ * called by admin GET endpoints and unsnapshot handlers. Since it only
+ * downloads and replaces local, it CANNOT wipe Blob data.
  * 
- * SAFETY: Compares user counts between local DB and downloaded Blob.
- * Keeps the DB with MORE users. This is FOOLPROOF — even if syncDbToBlob()
- * failed on another instance (23 users locally, 22 in Blob), this function
- * will KEEP the 23-user local DB instead of overwriting it with 22-user Blob.
+ * SAFETY: If Blob is unavailable or empty, keeps current local DB.
+ * The anti-wipe protection is in syncDbToBlob() which guards against
+ * uploading empty DBs. This function is safe to call from ANY read path.
  * 
- * The user count is fetched from the EXISTING Prisma client (no temp client).
- * If Prisma client doesn't exist yet, counts via the downloaded Blob file.
+ * CONSISTENCY: Every call replaces local with the exact Blob data.
+ * No user-count comparison — ALL instances see the SAME data from Blob.
+ * This prevents the 21/17 split where different instances keep different DBs.
  * 
  * Used by unsnapshotBeforeRead(), withUnsnapshotNull(), and withUnsnapshotForce().
  */
@@ -999,18 +1049,7 @@ export async function forceDownloadFromBlob(): Promise<void> {
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
   try {
-    // ─── STEP 1: Count users in current LOCAL DB ───
-    let localUserCount = 0;
-    try {
-      if (globalForPrisma.prisma) {
-        const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
-        localUserCount = Number(result?.[0]?.n ?? 0);
-      }
-    } catch {
-      localUserCount = 0;
-    }
-
-    // ─── STEP 2: Download from Blob to temp buffer ───
+    // ─── STEP 1: Download from Blob to temp buffer ───
     let blobBuffer: Buffer | null = null;
     try {
       blobBuffer = await downloadBlobToBuffer();
@@ -1023,48 +1062,15 @@ export async function forceDownloadFromBlob(): Promise<void> {
       return;
     }
 
-    // ─── STEP 3: Count users in DOWNLOADED Blob data ───
-    // Write Blob data to a temp file and open with Prisma to count users.
-    // This avoids corrupting the real local DB file.
-    let blobUserCount = 0;
-    const countDbPath = TMP_DB_PATH + '.blob_count';
-    try {
-      fs.writeFileSync(countDbPath, blobBuffer);
-      const countPrisma = new PrismaClient({
-        datasources: { db: { url: `file:${countDbPath}` } },
-      });
-      const result = await countPrisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
-      blobUserCount = Number(result?.[0]?.n ?? 0);
-      await countPrisma.$disconnect().catch(() => {});
-    } catch {
-      blobUserCount = 0;
-    }
-    // Clean up temp files
-    try { fs.unlinkSync(countDbPath); } catch {}
-    try { if (fs.existsSync(countDbPath + '-wal')) fs.unlinkSync(countDbPath + '-wal'); } catch {}
-    try { if (fs.existsSync(countDbPath + '-shm')) fs.unlinkSync(countDbPath + '-shm'); } catch {}
-
-    // ─── STEP 4: Keep the DB with MORE users ───
-    // If local has >= Blob users, keep local. This handles the case where
-    // syncDbToBlob() failed on another instance (23 users locally, 22 in Blob).
-    // Only replace local with Blob if Blob has STRICTLY MORE users.
-    if (localUserCount > 0 && localUserCount >= blobUserCount) {
-      console.log(`[Prisma] Force download: local=${localUserCount} >= blob=${blobUserCount} users — keeping local DB (richer or equal)`);
-      writeSyncMarker(Date.now());
-      return;
-    }
-
-    console.log(`[Prisma] Force download: blob=${blobUserCount} > local=${localUserCount} users — swapping in fresh Blob DB (${blobBuffer.length} bytes)`);
+    // ─── STEP 2: Safe swap — replace local DB with fresh Blob data ───
     fs.writeFileSync(TMP_DOWNLOAD_PATH, blobBuffer);
-
-    // Safe swap: reset client, replace DB file, update sync marker
     await resetPrisma();
     cleanupWalShm();
     if (fs.existsSync(BLOB_SYNC_MARKER)) fs.unlinkSync(BLOB_SYNC_MARKER);
     if (fs.existsSync(TMP_DB_PATH)) fs.unlinkSync(TMP_DB_PATH);
     fs.renameSync(TMP_DOWNLOAD_PATH, TMP_DB_PATH);
     writeSyncMarker(Date.now());
-    console.log('[Prisma] Force download: safely swapped in fresh Blob DB');
+    console.log(`[Prisma] Force download: safely swapped in fresh Blob DB (${blobBuffer.length} bytes)`);
   } catch (err) {
     console.error('[Prisma] Force download non-fatal:', err instanceof Error ? err.message : String(err));
     try { if (fs.existsSync(TMP_DOWNLOAD_PATH)) fs.unlinkSync(TMP_DOWNLOAD_PATH); } catch {}
