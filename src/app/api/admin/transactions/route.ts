@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getJwtSecret } from '@/lib/auth';
@@ -68,8 +68,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Amount must be a positive number.' }, { status: 400 });
     }
 
-    // Auto-detect user's country currency for the funding
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, countryCode: true } });
+    // Auto-detect user's country currency for the funding — use unsnapshot
+    const user = await withUnsnapshotNull('Admin Transactions POST', async () => {
+      const p = await getPrisma();
+      return p.user.findUnique({ where: { id: userId }, select: { id: true, countryCode: true } });
+    });
     if (!user) {
       return NextResponse.json({ error: 'User not found.' }, { status: 404 });
     }

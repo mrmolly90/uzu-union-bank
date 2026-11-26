@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotNull } from '@/lib/prisma';
 import { formatExactAmount } from '@/lib/format';
 import { getJwtSecret } from '@/lib/auth';
 
@@ -32,7 +32,11 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
 
-    const tx = await prisma.transaction.findUnique({ where: { id: transactionId }, include: { sourceAccount: true } });
+    // Use unsnapshot to handle cold-start DB restore races
+    const tx = await withUnsnapshotNull('Admin Transaction Status', async () => {
+      const p = await getPrisma();
+      return p.transaction.findUnique({ where: { id: transactionId }, include: { sourceAccount: true } });
+    });
     if (!tx) return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
 
     // Exact amounts, 2 decimals preserved, with the real source currency.

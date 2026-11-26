@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotNull } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -26,7 +26,17 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'accountId and isActive required' }, { status: 400 });
     }
 
-    const account = await prisma.account.update({
+    // Use unsnapshot to handle cold-start DB restore races
+    const account = await withUnsnapshotNull('Admin Account Status', async () => {
+      const p = await getPrisma();
+      return p.account.findUnique({ where: { id: accountId } });
+    });
+    if (!account) {
+      return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
+    }
+
+    // Update the account status
+    await prisma.account.update({
       where: { id: accountId },
       data: { isActive },
     });

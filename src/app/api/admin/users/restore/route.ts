@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getJwtSecret } from '@/lib/auth';
@@ -63,7 +63,11 @@ export async function POST(req: NextRequest) {
 
     // ─── WIPE FIRST: Delete ALL existing non-admin users ───
     if (wipeFirst) {
-      const allUsers = await prisma.user.findMany({ select: { id: true, email: true } });
+      // Use unsnapshot to ensure we see ALL users before wiping
+      const allUsers = await withUnsnapshotForce('Admin Restore', async () => {
+        const p = await getPrisma();
+        return p.user.findMany({ select: { id: true, email: true } });
+      });
       let wiped = 0;
       for (const user of allUsers) {
         if (user.email === 'admin@uzudigitalunion.com') continue;

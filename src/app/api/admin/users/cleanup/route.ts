@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -46,7 +46,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const prisma = await getPrisma();
-    const allUsers = await prisma.user.findMany({ select: { id: true, email: true, fullName: true } });
+    // Use unsnapshot to ensure we see ALL users before cleanup
+    const allUsers = await withUnsnapshotForce('Admin Cleanup', async () => {
+      const p = await getPrisma();
+      return p.user.findMany({ select: { id: true, email: true, fullName: true } });
+    });
     let deleted = 0;
 
     for (const user of allUsers) {

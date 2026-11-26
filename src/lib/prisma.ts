@@ -611,6 +611,30 @@ export async function syncDbToBlob(): Promise<void> {
     throw new Error('BLOB_STORE_ID not set, cannot sync DB to Blob');
   }
 
+  // ─── GUARD: NEVER sync an empty/stale DB to Blob ───
+  // If the local DB has 0 users, it's either a cold-start empty file or
+  // all users were deleted. In either case, syncing to Blob would OVERWRITE
+  // the real Blob data and permanently destroy all users across ALL instances.
+  // Check the file size first as a fast heuristic, then count users if possible.
+  const dbStat = fs.statSync(TMP_DB_PATH);
+  if (dbStat.size <= 4096) {
+    console.log('[Prisma] syncDbToBlob: local DB is empty (' + dbStat.size + ' bytes) — skipping sync to preserve Blob data');
+    return;
+  }
+  // If Prisma client exists, do a user-count check
+  if (globalForPrisma.prisma) {
+    try {
+      const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
+      const userCount = Number(result?.[0]?.n ?? 0);
+      if (userCount === 0) {
+        console.log('[Prisma] syncDbToBlob: local DB has 0 users — skipping sync to preserve Blob data');
+        return;
+      }
+    } catch {
+      // Query failed — proceed with sync anyway (file size > 4096 suggests real data)
+    }
+  }
+
   const buffer = fs.readFileSync(TMP_DB_PATH);
   
   // Retry up to 3 times with exponential backoff
@@ -965,27 +989,60 @@ export async function forceDownloadFromBlob(): Promise<void> {
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
   try {
-    // ─── STEP 1: Sync local DB to Blob FIRST ───
-    // If sync succeeds, local DB is already the freshest — keep it.
-    // Only download from Blob if sync fails (Blob may have data from
-    // another instance that we don't have locally).
-    let syncSucceeded = false;
+    // ─── STEP 1: Count users in local DB ───
+    // CRITICAL: NEVER sync an empty/stale local DB to Blob. If the local DB
+    // has 0 users (cold start, empty file) or only 1 user (seed DB with admin),
+    // it would OVERWRITE the real Blob data and permanently destroy all users.
+    let localUserCount = 0;
     try {
-      await syncDbToBlob();
-      syncSucceeded = true;
-      console.log('[Prisma] Force download: local→Blob sync OK — keeping local DB');
-    } catch (syncErr) {
-      console.warn('[Prisma] Force download: local→Blob sync failed:', syncErr instanceof Error ? syncErr.message : String(syncErr));
+      if (fs.existsSync(TMP_DB_PATH) && fs.statSync(TMP_DB_PATH).size > 4096) {
+        const prisma = globalForPrisma.prisma;
+        if (prisma) {
+          const result = await prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
+          localUserCount = Number(result?.[0]?.n ?? 0);
+        } else {
+          // No Prisma client — file exists with size, assume real data
+          localUserCount = 1; // unknown but non-zero
+        }
+      }
+    } catch {
+      localUserCount = 0;
+    }
+
+    // ─── STEP 2: Estimate Blob user count from metadata ───
+    let blobUserEstimate = -1;
+    try {
+      const blobMeta = await getBlobMeta();
+      blobUserEstimate = blobMeta.size > 0 ? Math.floor(blobMeta.size / 10000) : -1;
+    } catch {
+      blobUserEstimate = -1;
+    }
+
+    // ─── STEP 3: Decide: sync local→Blob or download Blob→local? ───
+    // Only sync local→Blob if local has MORE users than Blob estimate.
+    // If local has 0-1 users (empty/seed DB) or fewer than Blob, download instead.
+    // This prevents a seed-DB (1 admin user) from overwriting a 22-user Blob.
+    let syncSucceeded = false;
+    if (localUserCount > 1 && (blobUserEstimate < 0 || localUserCount >= blobUserEstimate)) {
+      // Local has real data (multiple users) and is at least as rich as Blob
+      try {
+        await syncDbToBlob();
+        syncSucceeded = true;
+        console.log(`[Prisma] Force download: local=${localUserCount} >= blob≈${blobUserEstimate} — synced local→Blob, keeping local DB`);
+      } catch (syncErr) {
+        console.warn('[Prisma] Force download: local→Blob sync failed:', syncErr instanceof Error ? syncErr.message : String(syncErr));
+      }
+    } else {
+      console.log(`[Prisma] Force download: local=${localUserCount} < blob≈${blobUserEstimate} — skipping sync, downloading fresh Blob`);
     }
 
     if (syncSucceeded) {
       // Local DB is already the freshest — no download needed.
-      // Just update the sync marker so warm instances don't re-download.
       writeSyncMarker(Date.now());
       return;
     }
 
-    // ─── STEP 2: Sync failed — download from Blob (may have fresher data) ───
+    // ─── STEP 4: Sync skipped or failed — download from Blob ───
     let downloadSucceeded = false;
     try {
       const blobBuffer = await downloadBlobToBuffer();

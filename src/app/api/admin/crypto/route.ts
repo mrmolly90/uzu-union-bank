@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -82,6 +82,15 @@ export async function PATCH(req: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: 'id required' }, { status: 400 });
+    }
+
+    // Use unsnapshot to verify the crypto address exists
+    const existing = await withUnsnapshotNull('Admin Crypto PATCH', async () => {
+      const p = await getPrisma();
+      return p.cryptoAddress.findUnique({ where: { id } });
+    });
+    if (!existing) {
+      return NextResponse.json({ error: 'Crypto address not found.' }, { status: 404 });
     }
 
     const data: any = {};

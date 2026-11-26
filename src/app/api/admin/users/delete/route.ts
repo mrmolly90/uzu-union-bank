@@ -22,7 +22,11 @@ export async function POST(req: NextRequest) {
     const { userId } = await req.json();
     if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    // Use unsnapshot to handle cold-start DB restore races
+    const user = await withUnsnapshotNull('Admin Delete User', async () => {
+      const p = await getPrisma();
+      return p.user.findUnique({ where: { id: userId } });
+    });
     if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
     // Delete all user data (cryptoDeposits first to satisfy FK constraints)

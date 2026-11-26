@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import { refreshAccessToken, sanitizeUser } from '@/lib/auth';
-import { getPrisma } from '@/lib/prisma';
+import { getPrisma, withUnsnapshotNull } from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,10 +21,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Decode to get user
+    // Decode to get user — use unsnapshot for cold-start races
     const decoded = jwt.decode(tokens.accessToken) as { sub: string; email: string };
-    const prisma = await getPrisma();
-    const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
+    const user = await withUnsnapshotNull('Refresh', async () => {
+      const prisma = await getPrisma();
+      return prisma.user.findUnique({ where: { id: decoded.sub } });
+    });
 
     return NextResponse.json({
       user: user ? sanitizeUser(user) : null,

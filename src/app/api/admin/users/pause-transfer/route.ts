@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotNull } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -31,7 +31,11 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'userId and transferPaused required' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    // Use unsnapshot to handle cold-start DB restore races
+    const user = await withUnsnapshotNull('Admin Pause Transfer', async () => {
+      const p = await getPrisma();
+      return p.user.findUnique({ where: { id: userId } });
+    });
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }

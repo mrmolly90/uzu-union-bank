@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getCurrencyByCountryCode } from '@/lib/countries';
@@ -61,10 +61,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'depositId and action (APPROVED|REJECTED) required' }, { status: 400 });
     }
 
-    // Get the deposit with user info
-    const deposit = await prisma.cryptoDeposit.findUnique({
-      where: { id: depositId },
-      include: { user: { select: { id: true, countryCode: true } } },
+    // Get the deposit with user info — use unsnapshot for cold-start races
+    const deposit = await withUnsnapshotNull('Admin Crypto Deposits POST', async () => {
+      const p = await getPrisma();
+      return p.cryptoDeposit.findUnique({
+        where: { id: depositId },
+        include: { user: { select: { id: true, countryCode: true } } },
+      });
     });
 
     if (!deposit) {
