@@ -526,14 +526,15 @@ export async function forceFreshDbFromBlob(): Promise<void> {
 /**
  * Download the Blob DB content into a Buffer without touching the local DB file.
  * Returns null if Blob is unavailable or empty.
+ * Retries up to 5 times with 2s exponential backoff (total ~30s).
  */
 async function downloadBlobToBuffer(): Promise<Buffer | null> {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   const storeId = process.env.BLOB_STORE_ID;
   if (!blobToken || !storeId) return null;
 
-  // Retry up to 3 times with backoff
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Retry up to 5 times with backoff
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
       // First try head() + authenticated fetch
       let blobBuffer: Buffer | null = null;
@@ -577,8 +578,8 @@ async function downloadBlobToBuffer(): Promise<Buffer | null> {
       }
     } catch { /* retry */ }
 
-    if (attempt < 2) {
-      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    if (attempt < 4) {
+      await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt))); // 2s, 4s, 8s, 16s
     }
   }
   return null;
@@ -785,16 +786,13 @@ export async function getPrisma(): Promise<PrismaClient> {
 
     if (!localDbValid) {
       // ─── Cold start: Try to download the freshest DB from Blob ───
-      // We retry 3 times with exponential backoff because Blob may be
+      // We retry 5 times with exponential backoff because Blob may be
       // temporarily unavailable during serverless cold-start races.
       let blobRestored = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 5; attempt++) {
         try {
           const blobBuffer = await downloadBlobToBuffer();
           if (blobBuffer && blobBuffer.length > 4096) {
-            // Quick validation: try to count users in the downloaded DB
-            // by writing to a temp path, creating a Prisma client, and querying.
-            // If the DB has valid data, use it.
             cleanupWalShm();
             fs.writeFileSync(TMP_DB_PATH, blobBuffer);
             writeSyncMarker(Date.now());
@@ -804,19 +802,17 @@ export async function getPrisma(): Promise<PrismaClient> {
           }
         } catch (err) {
           console.warn(`[Prisma] Cold start: Blob download attempt ${attempt + 1} failed`);
-          if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          if (attempt < 4) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
         }
       }
 
       if (!blobRestored) {
         console.log('[Prisma] Cold start: Blob unavailable after 3 retries — using seed DB fallback');
         // Fallback to the build-time seed DB which has tables + admin user.
-        // SAFETY: syncDbToBlob() will check user counts before uploading.
-        // The seed DB has 1 admin user. If Blob has 21 users, the guard
-        // "Blob size / 10000 > local user count" will prevent overwriting.
+        // SAFETY: syncDbToBlob() checks if Blob has MORE users before uploading.
+        // The seed DB has 1 admin user. If Blob has 21 users, syncDbToBlob()
+        // will SKIP the upload, preserving the richer Blob data.
         copyBuildDbToTmp();
-        // Set sync marker to NOW so warm instances don't re-download from
-        // Blob unnecessarily (Blob may be empty or stale).
         writeSyncMarker(Date.now());
       }
     }
