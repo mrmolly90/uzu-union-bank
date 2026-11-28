@@ -526,15 +526,15 @@ export async function forceFreshDbFromBlob(): Promise<void> {
 /**
  * Download the Blob DB content into a Buffer without touching the local DB file.
  * Returns null if Blob is unavailable or empty.
- * Retries up to 5 times with 2s exponential backoff (total ~30s).
+ * Retries up to 3 times with 1s backoff (total ~6s).
  */
 async function downloadBlobToBuffer(): Promise<Buffer | null> {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   const storeId = process.env.BLOB_STORE_ID;
   if (!blobToken || !storeId) return null;
 
-  // Retry up to 5 times with backoff
-  for (let attempt = 0; attempt < 5; attempt++) {
+  // Retry up to 3 times with backoff
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       // First try head() + authenticated fetch
       let blobBuffer: Buffer | null = null;
@@ -578,8 +578,8 @@ async function downloadBlobToBuffer(): Promise<Buffer | null> {
       }
     } catch { /* retry */ }
 
-    if (attempt < 4) {
-      await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt))); // 2s, 4s, 8s, 16s
+    if (attempt < 2) {
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); // 1s, 2s
     }
   }
   return null;
@@ -786,24 +786,19 @@ export async function getPrisma(): Promise<PrismaClient> {
 
     if (!localDbValid) {
       // ─── Cold start: Try to download the freshest DB from Blob ───
-      // We retry 5 times with exponential backoff because Blob may be
-      // temporarily unavailable during serverless cold-start races.
+      // downloadBlobToBuffer handles retries internally (3 attempts, ~6s total)
       let blobRestored = false;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        try {
-          const blobBuffer = await downloadBlobToBuffer();
-          if (blobBuffer && blobBuffer.length > 4096) {
-            cleanupWalShm();
-            fs.writeFileSync(TMP_DB_PATH, blobBuffer);
-            writeSyncMarker(Date.now());
-            console.log(`[Prisma] Cold start: restored from Blob (${blobBuffer.length} bytes)`);
-            blobRestored = true;
-            break;
-          }
-        } catch (err) {
-          console.warn(`[Prisma] Cold start: Blob download attempt ${attempt + 1} failed`);
-          if (attempt < 4) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
+      try {
+        const blobBuffer = await downloadBlobToBuffer();
+        if (blobBuffer && blobBuffer.length > 4096) {
+          cleanupWalShm();
+          fs.writeFileSync(TMP_DB_PATH, blobBuffer);
+          writeSyncMarker(Date.now());
+          console.log(`[Prisma] Cold start: restored from Blob (${blobBuffer.length} bytes)`);
+          blobRestored = true;
         }
+      } catch (err) {
+        console.warn('[Prisma] Cold start: Blob download failed:', err instanceof Error ? err.message : String(err));
       }
 
       if (!blobRestored) {
@@ -990,15 +985,11 @@ export async function forceDownloadFromBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
-  // Download from Blob (5 retries, ~30s total)
+  // Download from Blob (downloadBlobToBuffer handles retries internally)
   let blobBuffer: Buffer | null = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      blobBuffer = await downloadBlobToBuffer();
-      if (blobBuffer && blobBuffer.length > 4096) break;
-    } catch { /* retry */ }
-    if (attempt < 4) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
-  }
+  try {
+    blobBuffer = await downloadBlobToBuffer();
+  } catch { /* ignore */ }
 
   if (!blobBuffer || blobBuffer.length <= 4096) {
     // Blob unavailable — keep current DB silently
