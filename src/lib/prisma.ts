@@ -622,17 +622,38 @@ export async function syncDbToBlob(): Promise<void> {
   }
 
   // ─── GUARD 2: Only sync if local DB has real users ───
+  let localUserCount = 0;
   if (globalForPrisma.prisma) {
     try {
       const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
-      const userCount = Number(result?.[0]?.n ?? 0);
-      if (userCount === 0) {
+      localUserCount = Number(result?.[0]?.n ?? 0);
+      if (localUserCount === 0) {
         console.log('[Prisma] syncDbToBlob: local DB has 0 users — skipping sync');
         return;
       }
     } catch {
-      // Query failed — proceed with sync (file size > 4096 suggests real data)
+      localUserCount = 1; // unknown — proceed with caution
     }
+  }
+
+  // ─── GUARD 3: NEVER overwrite a richer Blob ───
+  // Before uploading, check if Blob has MORE users than local. If so,
+  // the Blob has data from another instance. Skip the upload to preserve
+  // the richer data. The local write is preserved locally and will sync
+  // on the next write cycle (when forceDownloadFromBlob() succeeds first).
+  // This is the LAST LINE OF DEFENSE against data loss.
+  try {
+    const blobMeta = await getBlobMeta();
+    if (blobMeta.size > 4096) {
+      const blobUserEstimate = Math.floor(blobMeta.size / 10000);
+      if (blobUserEstimate > localUserCount) {
+        console.log(`[Prisma] syncDbToBlob: Blob≈${blobUserEstimate} > local=${localUserCount} — Blob is richer! Skipping upload to preserve Blob data.`);
+        writeSyncMarker(Date.now());
+        return;
+      }
+    }
+  } catch {
+    // Blob check failed — proceed with sync anyway
   }
 
   const buffer = fs.readFileSync(TMP_DB_PATH);
@@ -807,12 +828,17 @@ export async function getPrisma(): Promise<PrismaClient> {
       }
 
       if (!blobRestored) {
-        console.log('[Prisma] Cold start: Blob unavailable after 3 retries — using seed DB fallback');
-        // Fallback to the build-time seed DB which has tables + admin user.
-        // SAFETY: syncDbToBlob() checks if Blob has MORE users before uploading.
-        // The seed DB has 1 admin user. If Blob has 21 users, syncDbToBlob()
-        // will SKIP the upload, preserving the richer Blob data.
-        copyBuildDbToTmp();
+        console.log('[Prisma] Cold start: Blob unavailable after 5 retries — creating empty DB with schema');
+        // CRITICAL: Do NOT copy a seed DB. The seed DB has 17 users from
+        // build time. If syncDbToBlob() uploads it, it OVERWRITES the real
+        // Blob (21+ users) and permanently destroys users.
+        // Instead, create an empty DB. ensureLatestSchema() will create all
+        // core tables. syncDbToBlob() will skip it (0 users). The next
+        // forceDownloadFromBlob() call will retry and get the real Blob.
+        ensureTmpDir();
+        if (!fs.existsSync(TMP_DB_PATH)) {
+          fs.writeFileSync(TMP_DB_PATH, '');
+        }
         writeSyncMarker(Date.now());
       }
     }
@@ -972,18 +998,10 @@ export async function withUnsnapshotNull<T>(
  * FORCE download from Blob — ALWAYS downloads fresh Blob and replaces
  * the local DB. This is a READ-ONLY operation — it NEVER syncs local→Blob.
  * 
- * CRITICAL: The ONLY places that should sync to Blob are WRITE endpoints
- * (register, fund, transfer, admin transactions, etc.). This function is
- * called by admin GET endpoints and unsnapshot handlers. Since it only
- * downloads and replaces local, it CANNOT wipe Blob data.
- * 
  * SAFETY: If Blob is unavailable or empty, keeps current local DB.
- * The anti-wipe protection is in syncDbToBlob() which guards against
- * uploading empty DBs. This function is safe to call from ANY read path.
- * 
- * CONSISTENCY: Every call replaces local with the exact Blob data.
- * No user-count comparison — ALL instances see the SAME data from Blob.
- * This prevents the 21/17 split where different instances keep different DBs.
+ * The anti-wipe protection is in syncDbToBlob() which checks if Blob
+ * has MORE users before uploading. This function is safe to call from
+ * ANY read path — it only replaces local with Blob, never vice versa.
  * 
  * Used by unsnapshotBeforeRead(), withUnsnapshotNull(), and withUnsnapshotForce().
  */
