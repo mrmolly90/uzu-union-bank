@@ -86,12 +86,10 @@ function writeSyncMarker(timestampMs: number): void {
  */
 async function getBlobMeta(): Promise<{ size: number; uploadedAt: number }> {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  const storeId = process.env.BLOB_STORE_ID;
-  if (!blobToken || !storeId) return { size: 0, uploadedAt: 0 };
+  if (!blobToken) return { size: 0, uploadedAt: 0 };
   try {
-    const meta = await head(BLOB_DB_KEY, { token: blobToken, storeId }) as any;
+    const meta = await head(BLOB_DB_KEY, { token: blobToken }) as any;
     const size = meta?.size && meta.size > 4096 ? meta.size : 0;
-    // uploadedAt comes back as ISO string from @vercel/blob
     const uploadedAt = meta?.uploadedAt ? new Date(meta.uploadedAt).getTime() : 0;
     return { size, uploadedAt };
   } catch { return { size: 0, uploadedAt: 0 }; }
@@ -530,8 +528,7 @@ export async function forceFreshDbFromBlob(): Promise<void> {
  */
 async function downloadBlobToBuffer(): Promise<Buffer | null> {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  const storeId = process.env.BLOB_STORE_ID;
-  if (!blobToken || !storeId) return null;
+  if (!blobToken) return null;
 
   // Retry up to 3 times with backoff
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -539,7 +536,7 @@ async function downloadBlobToBuffer(): Promise<Buffer | null> {
       // First try head() + authenticated fetch
       let blobBuffer: Buffer | null = null;
       try {
-        const meta = await head(BLOB_DB_KEY, { token: blobToken, storeId }) as any;
+        const meta = await head(BLOB_DB_KEY, { token: blobToken }) as any;
         if (meta?.downloadUrl) {
           const response = await fetch(meta.downloadUrl, {
             headers: { Authorization: `Bearer ${blobToken}` },
@@ -557,7 +554,6 @@ async function downloadBlobToBuffer(): Promise<Buffer | null> {
           const blobResult = await get(BLOB_DB_KEY, {
             access: 'private',
             token: blobToken,
-            storeId,
           });
           if (blobResult?.stream) {
             const reader = blobResult.stream.getReader();
@@ -609,11 +605,6 @@ export async function syncDbToBlob(): Promise<void> {
   if (!blobToken) return;
   if (!fs.existsSync(TMP_DB_PATH)) return;
 
-  const storeId = process.env.BLOB_STORE_ID;
-  if (!storeId) {
-    throw new Error('BLOB_STORE_ID not set, cannot sync DB to Blob');
-  }
-
   // ─── GUARD 1: NEVER sync an empty DB to Blob ───
   const dbStat = fs.statSync(TMP_DB_PATH);
   if (dbStat.size <= 4096) {
@@ -644,7 +635,6 @@ export async function syncDbToBlob(): Promise<void> {
       await put(BLOB_DB_KEY, buffer, {
         access: 'private',
         token: blobToken,
-        storeId,
         addRandomSuffix: false,
         allowOverwrite: true,
         contentType: 'application/octet-stream',
@@ -710,12 +700,11 @@ export async function checkDbHealth(): Promise<{
   if (result.dbExists) {
     result.dbSize = fs.statSync(TMP_DB_PATH).size;
   }
-  if (result.isVercel && result.hasBlobToken && result.hasStoreId) {
+  if (result.isVercel && result.hasBlobToken) {
     try {
       const blobResult = await get(BLOB_DB_KEY, {
         access: 'private',
         token: process.env.BLOB_READ_WRITE_TOKEN,
-        storeId: process.env.BLOB_STORE_ID,
       });
       result.blobFileExists = blobResult !== null;
       if (blobResult?.blob?.size) {
