@@ -985,18 +985,51 @@ export async function forceDownloadFromBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
-  // Download from Blob (downloadBlobToBuffer handles retries internally)
+  // ─── STEP 1: Count users in current LOCAL DB ───
+  let localUserCount = 0;
+  try {
+    if (globalForPrisma.prisma) {
+      const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
+      localUserCount = Number(result?.[0]?.n ?? 0);
+    }
+  } catch { /* can't count — proceed with download */ }
+
+  // ─── STEP 2: Download from Blob ───
   let blobBuffer: Buffer | null = null;
   try {
     blobBuffer = await downloadBlobToBuffer();
   } catch { /* ignore */ }
 
   if (!blobBuffer || blobBuffer.length <= 4096) {
-    // Blob unavailable — keep current DB silently
+    return; // Blob unavailable — keep current DB
+  }
+
+  // ─── STEP 3: Count users in DOWNLOADED Blob data ───
+  let blobUserCount = 0;
+  const countDbPath = TMP_DB_PATH + '.blob_count';
+  try {
+    fs.writeFileSync(countDbPath, blobBuffer);
+    const countPrisma = new PrismaClient({
+      datasources: { db: { url: `file:${countDbPath}` } },
+    });
+    const result = await countPrisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
+    blobUserCount = Number(result?.[0]?.n ?? 0);
+    await countPrisma.$disconnect().catch(() => {});
+  } catch { blobUserCount = 0; }
+  // Clean up temp files
+  try { fs.unlinkSync(countDbPath); } catch {}
+  try { if (fs.existsSync(countDbPath + '-wal')) fs.unlinkSync(countDbPath + '-wal'); } catch {}
+  try { if (fs.existsSync(countDbPath + '-shm')) fs.unlinkSync(countDbPath + '-shm'); } catch {}
+
+  // ─── STEP 4: Keep the DB with MORE users ───
+  if (localUserCount > 0 && localUserCount >= blobUserCount) {
+    console.log(`[Prisma] Force download: local=${localUserCount} >= blob=${blobUserCount} users — keeping local DB`);
+    writeSyncMarker(Date.now());
     return;
   }
 
-  // Safe swap — replace local DB with fresh Blob data
+  // Blob has MORE users — swap it in
+  console.log(`[Prisma] Force download: blob=${blobUserCount} > local=${localUserCount} users — swapping in fresh Blob DB`);
   try {
     fs.writeFileSync(TMP_DOWNLOAD_PATH, blobBuffer);
     await resetPrisma();

@@ -105,12 +105,6 @@ export async function POST(req: NextRequest) {
         // Try to persist DB to Blob (best-effort — user data exists in local DB)
         try {
           await syncDbToBlob();
-          // Force-download from Blob so ALL instances see the new user immediately.
-          // This ensures the admin panel and other instances pick up the new user
-          // on their next request, even if they have a stale local DB.
-          try {
-            await forceDownloadFromBlob();
-          } catch {}
           await resetPrisma();
         } catch (syncErr) {
           console.error('[Register] Blob sync failed (non-fatal):', syncErr);
