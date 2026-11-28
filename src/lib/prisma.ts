@@ -828,17 +828,12 @@ export async function getPrisma(): Promise<PrismaClient> {
       }
 
       if (!blobRestored) {
-        console.log('[Prisma] Cold start: Blob unavailable after 5 retries — creating empty DB with schema');
-        // CRITICAL: Do NOT copy a seed DB. The seed DB has 17 users from
-        // build time. If syncDbToBlob() uploads it, it OVERWRITES the real
-        // Blob (21+ users) and permanently destroys users.
-        // Instead, create an empty DB. ensureLatestSchema() will create all
-        // core tables. syncDbToBlob() will skip it (0 users). The next
-        // forceDownloadFromBlob() call will retry and get the real Blob.
-        ensureTmpDir();
-        if (!fs.existsSync(TMP_DB_PATH)) {
-          fs.writeFileSync(TMP_DB_PATH, '');
-        }
+        console.log('[Prisma] Cold start: Blob unavailable after 5 retries — using seed DB fallback');
+        // Fallback to the build-time seed DB which has tables + admin user.
+        // SAFETY: syncDbToBlob() Guard 3 checks if Blob has MORE users
+        // before uploading. The seed DB has 1 admin user. If Blob has 21+
+        // users, Guard 3 will SKIP the upload, preserving the richer Blob.
+        copyBuildDbToTmp();
         writeSyncMarker(Date.now());
       }
     }
