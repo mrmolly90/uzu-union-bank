@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, forceDownloadFromBlob, unsnapshotBeforeRead } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, forceDownloadFromBlob, unsnapshotBeforeWrite } from '@/lib/prisma';
 import { hashPassword, createAuthTokens, sanitizeUser } from '@/lib/auth';
 import { registerSchema } from '@/lib/validations';
 import { buildOpeningAccounts } from '@/lib/accounts';
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     // on Instance B would create user #23 on a stale DB, then syncDbToBlob()
     // would OVERWRITE Instance A's user #23 with Instance B's user #23.
     // One user would be permanently destroyed.
-    await unsnapshotBeforeRead();
+    await unsnapshotBeforeWrite();
 
     const prisma = await getPrisma();
     const body = await req.json().catch(() => null);

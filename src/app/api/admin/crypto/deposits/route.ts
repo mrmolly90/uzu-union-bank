@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, unsnapshotBeforeWrite, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 import { generate16DigitAccountNumber } from '@/lib/accounts';
 import { getCurrencyByCountryCode } from '@/lib/countries';
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // Download freshest Blob BEFORE the write so we operate on merged data
-    await unsnapshotBeforeRead();
+    await unsnapshotBeforeWrite();
 
     const prisma = await getPrisma();
     const { depositId, action } = await req.json();

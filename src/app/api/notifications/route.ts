@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, unsnapshotBeforeWrite, withUnsnapshotForce } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 
 /**
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     // Download freshest Blob BEFORE the write so we operate on merged data
-    await unsnapshotBeforeRead();
+    await unsnapshotBeforeWrite();
 
     const prisma = await getPrisma();
     const auth = req.headers.get('authorization');

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeWrite, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { verifyAccessToken } from '@/lib/auth';
 import { generateTxHash } from '@/lib/utils';
 import { formatExactAmount } from '@/lib/format';
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Download freshest Blob BEFORE the write so we operate on merged data
-    await unsnapshotBeforeRead();
+    await unsnapshotBeforeWrite();
 
     const body = await req.json();
     const { sourceAccountId, destinationAccountId, amount } = body;

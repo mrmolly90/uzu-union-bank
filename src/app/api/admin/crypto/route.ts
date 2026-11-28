@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
+import { getPrisma, syncDbToBlob, resetPrisma, unsnapshotBeforeRead, unsnapshotBeforeWrite, withUnsnapshotForce, withUnsnapshotNull } from '@/lib/prisma';
 import { getJwtSecret } from '@/lib/auth';
 
 function verifyAdmin(req: NextRequest) {
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // Download freshest Blob BEFORE the write so we operate on merged data
-    await unsnapshotBeforeRead();
+    await unsnapshotBeforeWrite();
 
     const prisma = await getPrisma();
     const { symbol, name, network, address, minDeposit } = await req.json();
