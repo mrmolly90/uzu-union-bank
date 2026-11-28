@@ -55,7 +55,7 @@ function cleanupWalShm(): void {
       console.log('[Prisma] Cleaned stale SHM file');
     }
   } catch (err) {
-    console.warn('[Prisma] WAL/SHM cleanup error:', err instanceof Error ? err.message : String(err));
+    console.log('[Prisma] WAL/SHM cleanup error:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -469,7 +469,7 @@ export async function forceFreshDbFromBlob(): Promise<void> {
     // wasteful and RISKY (could get a stale Blob and wipe real users).
     if (localDbHasData && (blobUsers < 0 || localUsers >= blobUsers)) {
       console.log(`[Prisma] forceFreshDbFromBlob: local=${localUsers} users >= blob≈${blobUsers} — syncing local→Blob, keeping local DB`);
-      try { await syncDbToBlob(); } catch (e) { console.warn('[Prisma] sync warning:', e); }
+      try { await syncDbToBlob(); } catch (e) { console.log('[Prisma] sync warning:', e); }
       // CRITICAL: Update sync marker even if sync FAILED. This prevents the
       // warm-instance getPrisma() path from seeing isBlobNewerThanLocal()=true
       // and downloading a stale Blob that would wipe real users.
@@ -482,7 +482,7 @@ export async function forceFreshDbFromBlob(): Promise<void> {
     // Only download from Blob when we're SURE Blob has more data.
     if (localDbHasData && localUsers < 0) {
       console.log(`[Prisma] forceFreshDbFromBlob: local DB exists but users unknown — keeping local DB`);
-      try { await syncDbToBlob(); } catch (e) { console.warn('[Prisma] sync warning:', e); }
+      try { await syncDbToBlob(); } catch (e) { console.log('[Prisma] sync warning:', e); }
       writeSyncMarker(Date.now());
       return;
     }
@@ -499,7 +499,7 @@ export async function forceFreshDbFromBlob(): Promise<void> {
         console.log(`[Prisma] Downloaded fresh Blob (${blobBuffer.length} bytes) to temp file`);
       }
     } catch (err) {
-      console.warn('[Prisma] Blob download failed — keeping current DB intact:', err instanceof Error ? err.message : String(err));
+      console.log('[Prisma] Blob download failed — keeping current DB intact:', err instanceof Error ? err.message : String(err));
     }
 
     if (!downloadSucceeded) {
@@ -613,11 +613,12 @@ export async function syncDbToBlob(): Promise<void> {
   }
 
   // ─── GUARD 2: Only sync if local DB has real users ───
+  let localUserCount = 0;
   if (globalForPrisma.prisma) {
     try {
       const result = await globalForPrisma.prisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
-      const userCount = Number(result?.[0]?.n ?? 0);
-      if (userCount === 0) {
+      localUserCount = Number(result?.[0]?.n ?? 0);
+      if (localUserCount === 0) {
         console.log('[Prisma] syncDbToBlob: local DB has 0 users — skipping sync');
         return;
       }
@@ -625,6 +626,34 @@ export async function syncDbToBlob(): Promise<void> {
       // Query failed — proceed with sync (file size > 4096 suggests real data)
     }
   }
+
+  // ─── GUARD 3: NEVER overwrite a richer Blob with a stale local DB ───
+  // After cold start, the local DB may have fewer users than Blob.
+  // Download Blob metadata, count users, and only upload if local >= Blob.
+  try {
+    const blobBuffer = await downloadBlobToBuffer();
+    if (blobBuffer && blobBuffer.length > 4096) {
+      const countDbPath = TMP_DB_PATH + '.blob_count_sync';
+      try {
+        fs.writeFileSync(countDbPath, blobBuffer);
+        const countPrisma = new PrismaClient({
+          datasources: { db: { url: `file:${countDbPath}` } },
+        });
+        const blobResult = await countPrisma.$queryRawUnsafe<Array<{n: number}>>('SELECT COUNT(*) AS n FROM "User"');
+        const blobUserCount = Number(blobResult?.[0]?.n ?? 0);
+        await countPrisma.$disconnect().catch(() => {});
+        if (blobUserCount > localUserCount) {
+          console.log(`[Prisma] syncDbToBlob: Blob has ${blobUserCount} > local ${localUserCount} users — skipping sync to preserve richer Blob`);
+          writeSyncMarker(Date.now());
+          return;
+        }
+      } catch { /* can't count Blob users — proceed with sync */ }
+      // Clean up temp files
+      try { fs.unlinkSync(countDbPath); } catch {}
+      try { if (fs.existsSync(countDbPath + '-wal')) fs.unlinkSync(countDbPath + '-wal'); } catch {}
+      try { if (fs.existsSync(countDbPath + '-shm')) fs.unlinkSync(countDbPath + '-shm'); } catch {}
+    }
+  } catch { /* Blob unavailable — proceed with sync */ }
 
   const buffer = fs.readFileSync(TMP_DB_PATH);
   
@@ -644,7 +673,7 @@ export async function syncDbToBlob(): Promise<void> {
       return; // success
     } catch (err) {
       lastError = err;
-      console.warn(`[Prisma] Blob sync attempt ${attempt + 1}/3 failed:`, err instanceof Error ? err.message : String(err));
+      console.log(`[Prisma] Blob sync attempt ${attempt + 1}/3 failed:`, err instanceof Error ? err.message : String(err));
       if (attempt < 2) {
         await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt))); // 1s, 2s
       }
@@ -787,7 +816,7 @@ export async function getPrisma(): Promise<PrismaClient> {
           blobRestored = true;
         }
       } catch (err) {
-        console.warn('[Prisma] Cold start: Blob download failed:', err instanceof Error ? err.message : String(err));
+        console.log('[Prisma] Cold start: Blob download failed:', err instanceof Error ? err.message : String(err));
       }
 
       if (!blobRestored) {
@@ -836,7 +865,7 @@ export async function unsnapshotBeforeRead(): Promise<void> {
     await forceDownloadFromBlob();
     await resetPrisma();
   } catch (err) {
-    console.warn('[Unsnapshot] Read unsnapshot failed:', err instanceof Error ? err.message : String(err));
+    console.log('[Unsnapshot] Read unsnapshot failed:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -854,7 +883,7 @@ export async function unsnapshotBeforeWrite(): Promise<void> {
     await forceDownloadFromBlob();
     await resetPrisma();
   } catch (err) {
-    console.warn('[Unsnapshot] Write unsnapshot failed, keeping current DB:', err instanceof Error ? err.message : String(err));
+    console.log('[Unsnapshot] Write unsnapshot failed, keeping current DB:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -887,7 +916,7 @@ export async function withUnsnapshot<T>(
       await forceFreshDbFromBlob();
       await resetPrisma();
     } catch (e) {
-      console.warn(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
+      console.log(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
     }
     return await query();
   }
@@ -920,7 +949,7 @@ export async function withUnsnapshotForce<T>(
       await forceDownloadFromBlob();
       await resetPrisma();
     } catch (e) {
-      console.warn(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
+      console.log(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
     }
     return await query();
   }
@@ -956,7 +985,7 @@ export async function withUnsnapshotNull<T>(
     await forceDownloadFromBlob();
     await resetPrisma();
   } catch (e) {
-    console.warn(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
+    console.log(`[${label}] Unsnapshot failed:`, e instanceof Error ? e.message : String(e));
   }
   return await query();
 }
