@@ -802,11 +802,11 @@ export async function getPrisma(): Promise<PrismaClient> {
       }
 
       if (!blobRestored) {
-        console.log('[Prisma] Cold start: Blob unavailable after 5 retries — using seed DB fallback');
+        console.log('[Prisma] Cold start: Blob unavailable after retries — using seed DB fallback');
         // Fallback to the build-time seed DB which has tables + admin user.
-        // SAFETY: syncDbToBlob() Guard 3 checks if Blob has MORE users
-        // before uploading. The seed DB has 1 admin user. If Blob has 21+
-        // users, Guard 3 will SKIP the upload, preserving the richer Blob.
+        // SAFETY: syncDbToBlob() checks if Blob has MORE users before
+        // uploading. The seed DB has 1 admin user. If Blob has 21+ users,
+        // syncDbToBlob() will SKIP the upload, preserving the richer Blob.
         copyBuildDbToTmp();
         writeSyncMarker(Date.now());
       }
