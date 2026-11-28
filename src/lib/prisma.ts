@@ -858,15 +858,20 @@ export async function unsnapshotBeforeRead(): Promise<void> {
 
 /**
  * PROACTIVE UNSNAPSHOT FOR WRITES: Call this BEFORE every write operation.
- * Downloads the freshest Blob data. THROWS on failure so writes NEVER
- * proceed on stale data — that causes the "new users disappear" bug.
+ * Downloads the freshest Blob data. If Blob is unavailable, keeps current
+ * local DB (safe fallback). syncDbToBlob() Guard 3 prevents overwriting
+ * a richer Blob if the local DB is stale.
  * 
  * Call this at the START of every POST/PATCH/DELETE endpoint.
  */
 export async function unsnapshotBeforeWrite(): Promise<void> {
   if (!process.env.VERCEL) return;
-  await forceDownloadFromBlob();
-  await resetPrisma();
+  try {
+    await forceDownloadFromBlob();
+    await resetPrisma();
+  } catch (err) {
+    console.warn('[Unsnapshot] Write unsnapshot failed, keeping current DB:', err instanceof Error ? err.message : String(err));
+  }
 }
 
 /**
@@ -976,47 +981,31 @@ export async function withUnsnapshotNull<T>(
  * FORCE download from Blob — ALWAYS downloads fresh Blob and replaces
  * the local DB. This is a READ-ONLY operation — it NEVER syncs local→Blob.
  * 
- * CRITICAL: Retries until Blob is available. If Blob is unavailable after
- * all retries, throws an error. Callers should NOT proceed with writes
- * on stale data — that would cause the "new users disappear" bug.
+ * SAFETY: If Blob is unavailable or empty, keeps current local DB silently.
+ * NEVER throws — callers can always proceed with current DB.
  * 
- * SAFETY: If Blob is empty (first deploy), keeps current local DB.
- * 
- * Used by unsnapshotBeforeRead(), withUnsnapshotNull(), and withUnsnapshotForce().
+ * Used by unsnapshotBeforeRead(), unsnapshotBeforeWrite(), withUnsnapshotNull().
  */
 export async function forceDownloadFromBlob(): Promise<void> {
   if (!process.env.VERCEL) return;
   const TMP_DOWNLOAD_PATH = path.join(TMP_DB_DIR, 'uzu_bank.db.download');
 
-  // ─── STEP 1: Download from Blob to temp buffer ───
-  // Retry until Blob is available (up to 5 times, ~30s total)
+  // Download from Blob (5 retries, ~30s total)
   let blobBuffer: Buffer | null = null;
-  let lastError: string | null = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       blobBuffer = await downloadBlobToBuffer();
-      if (blobBuffer && blobBuffer.length > 4096) {
-        break; // success
-      }
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-    }
-    if (attempt < 4) {
-      await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
-    }
+      if (blobBuffer && blobBuffer.length > 4096) break;
+    } catch { /* retry */ }
+    if (attempt < 4) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
   }
 
   if (!blobBuffer || blobBuffer.length <= 4096) {
-    // Blob is empty (first deploy) — keep current local DB
-    if (fs.existsSync(TMP_DB_PATH) && fs.statSync(TMP_DB_PATH).size > 4096) {
-      console.log('[Prisma] Force download: Blob empty (first deploy) — keeping current DB');
-      return;
-    }
-    // Blob unavailable AND no local DB — throw so callers know
-    throw new Error('Blob unavailable after 5 retries: ' + (lastError || 'empty response'));
+    // Blob unavailable — keep current DB silently
+    return;
   }
 
-  // ─── STEP 2: Safe swap — replace local DB with fresh Blob data ───
+  // Safe swap — replace local DB with fresh Blob data
   try {
     fs.writeFileSync(TMP_DOWNLOAD_PATH, blobBuffer);
     await resetPrisma();
@@ -1029,6 +1018,5 @@ export async function forceDownloadFromBlob(): Promise<void> {
   } catch (err) {
     console.error('[Prisma] Force download non-fatal:', err instanceof Error ? err.message : String(err));
     try { if (fs.existsSync(TMP_DOWNLOAD_PATH)) fs.unlinkSync(TMP_DOWNLOAD_PATH); } catch {}
-    throw err;
   }
 }
